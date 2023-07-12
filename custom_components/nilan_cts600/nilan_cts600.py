@@ -1,5 +1,5 @@
 
-import codecs, struct, time
+import codecs, struct, time, os, re
 from enum import Enum
 from pymodbus.client import ModbusSerialClient
 from pymodbus.utilities import computeCRC
@@ -51,6 +51,11 @@ def parseLastNumber (string):
     
 def parseCelcius (string):
     return parseLastNumber(string[0:string.find('°C')])
+
+def findUSB (dev='/dev/'):
+    for ttyusb in filter(lambda x: re.search('^ttyUSB[0-9]*', x), os.listdir(dev)):
+        return dev + ttyusb
+    raise Exception ('No USB device found.')
 
 _nilanCodePage = {
     8: 198,
@@ -210,6 +215,7 @@ class CTS600:
     remote_version = 0x5c
         
     def __init__(self, port=None, client=None, unit=3, rows=2, columns=8, logger=None):
+        self.port = port
         self.client = client or ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
         self._logger = logger
         self.unit = unit
@@ -266,7 +272,7 @@ class CTS600:
 
         """
         (reqOP, *args) = request if isinstance(request, tuple) else (request,)
-        time.sleep (0.05)
+        # time.sleep (0.05)
         # while self.client.recv(1):
         #     pass
         self.send(reqOP, requestFrame)
@@ -377,8 +383,11 @@ class CTS600:
         go (self.esc())
         go (self.esc())
         go (self.esc())
+        go (self.esc())
         newDataText['thermostat'] = trace[-1]
         newData['thermostat'] = parseCelcius(newDataText['thermostat'])
+        newDataText['mode'] = trace[-1]
+        newData['mode'] = newDataText['mode'].split (None, 2)[0]
         go (self.up())
         go (self.enter())
         newDataText['status'] = trace[-1]
@@ -404,6 +413,7 @@ class CTS600:
         go (self.down())
         newDataText['exhaustFlow'] = trace[-1]
         newData['exhaustFlow'] = parseLastNumber (newDataText['exhaustFlow'])
+        newData['LED'] = self.led()
         self.data = newData
         self.dataText = newDataText
         self._data_trace = trace
@@ -414,7 +424,7 @@ class CTS600:
         def getBlinkText (string):
             return string[string.find('{')+1:string.find('}')].strip()
 
-        if not 5 <= celcius <= 50:
+        if not 5 <= celcius <= 30:
             raise Exception (f'Illegal thermostat value: {celcius}')
 
         self.esc()
@@ -439,7 +449,8 @@ class CTS600:
         self.wi_ro_regs (0x2a, nilanCelsiusToAD (celcius))
         
     
-def test(port="/dev/ttyUSB0"):
+def test(port=None):
+    port = port or findUSB()
     client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
     cts600 = CTS600(client=client)
     cts600.connect()
