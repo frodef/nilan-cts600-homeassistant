@@ -345,35 +345,32 @@ class CTS600:
             self.wi_ro_regs (0x100, 0)
         return self.display()
 
-    def esc (self):
+    def key_esc (self):
         return self.key (0x01)
     
-    def up (self):
+    def key_up (self):
         return self.key(0x02)
 
-    def down (self):
+    def key_down (self):
         return self.key(0x04)
 
-    def enter (self):
-        self.wi_ro_regs (0x100, 8)
-        self.wi_ro_regs (0x100, 8)
-        self.wi_ro_regs (0x100, 0)
-        return self.display()
+    def key_enter (self):
+        return self.key (0x08)
 
-    def off (self):
+    def key_off (self):
         return self.key (0x10)
 
-    def on (self):
+    def key_on (self):
         return self.key (0x20)
 
     def resetMenu (self, maxTries=10):
         """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
         old_display = self.display()
-        new_display = self.esc()
+        new_display = self.key_esc()
         countTries = 0
         while new_display != old_display:
             old_display = new_display
-            new_display = self.esc()
+            new_display = self.key_esc()
             countTries += 1
             if countTries >= maxTries:
                 raise NilanCTS600Exception (f'Unable to resetMenu: {old_display} -> {new_display}')
@@ -422,15 +419,15 @@ class CTS600:
         newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
         newData['flow'] = parseFlow (go (self.display(), 'flow'))
         # Now enter the DISPLAY DATA menu and record the various data entries:
-        go (self.up())
-        newData['status'] = go(self.enter(), 'status').split(None, 2)[1]
-        newData['T15'] = parseCelsius (go(self.down(), 'T15'))
-        newData['T2'] = parseCelsius (go(self.down(), 'T2'))
-        newData['T1'] = parseCelsius (go(self.down(), 'T1'))
-        newData['T5'] = parseCelsius (go(self.down(), 'T5'))
-        newData['T6'] = parseCelsius (go(self.down(), 'T6'))
-        newData['inletFlow'] = parseLastNumber (go(self.down(), 'inletFlow'))
-        newData['exhaustFlow'] = parseLastNumber (go(self.down(), 'exhaustFlow'))
+        go (self.key_up())
+        newData['status'] = go(self.key_enter(), 'status').split(None, 2)[1]
+        newData['T15'] = parseCelsius (go(self.key_down(), 'T15'))
+        newData['T2'] = parseCelsius (go(self.key_down(), 'T2'))
+        newData['T1'] = parseCelsius (go(self.key_down(), 'T1'))
+        newData['T5'] = parseCelsius (go(self.key_down(), 'T5'))
+        newData['T6'] = parseCelsius (go(self.key_down(), 'T6'))
+        newData['inletFlow'] = parseLastNumber (go(self.key_down(), 'inletFlow'))
+        newData['exhaustFlow'] = parseLastNumber (go(self.key_down(), 'exhaustFlow'))
         # Record the state of the status LED
         newData['LED'] = self.led()
         self.data = newData
@@ -447,16 +444,16 @@ class CTS600:
             raise Exception (f'Illegal thermostat value: {celsius}')
 
         currentThermostat = parseCelsius(self.resetMenu())
-        if f'{currentThermostat}' != getBlinkText (self.enter()):
+        if f'{currentThermostat}' != getBlinkText (self.key_enter()):
             x = self.key()
             raise Exception ('Failed to enter thermostat input mode.', x, getBlinkText (x))
         if celsius > currentThermostat:
             for _ in range (0, celsius - currentThermostat):
-                self.up()
+                self.key_up()
         elif celsius < currentThermostat:
             for _ in range (0, currentThermostat - celsius):
-                self.down()
-        return self.enter()
+                self.key_down()
+        return self.key_enter()
 
     def setFlow (self, flow):
         """ Set fan flow level to FLOW, i.e. 1-4. """
@@ -467,18 +464,18 @@ class CTS600:
             raise Exception (f'Illegal flow value: {flow}')
 
         currentFlow = parseFlow(self.resetMenu())
-        self.enter() # thermostat
-        self.enter() # heat/cool mode
-        if f'>{currentFlow}<' != getBlinkText (self.enter()):
+        self.key_enter() # thermostat
+        self.key_enter() # heat/cool mode
+        if f'>{currentFlow}<' != getBlinkText (self.key_enter()):
             x = self.key()
             raise Exception ('Failed to flow input mode.', x, getBlinkText (x))
         if flow > currentFlow:
             for _ in range (0, flow - currentFlow):
-                self.up()
+                self.key_up()
         elif flow < currentFlow:
             for _ in range (0, currentFlow - flow):
-                self.down()
-        self.enter() # commit value
+                self.key_down()
+        self.key_enter() # commit value
         return self.key()
 
     def setMode (self, mode):
@@ -492,15 +489,15 @@ class CTS600:
         # operate menu based on mode position, so as to operate
         # independent of CTS600 language setting.
         self.resetMenu()
-        self.enter() # thermostat
-        self.enter() # mode
+        self.key_enter() # thermostat
+        self.key_enter() # mode
         # now ensure we're at topmost mode, i.e. 'AUTO'
-        self.up()
-        self.up()
-        self.up()
+        self.key_up()
+        self.key_up()
+        self.key_up()
         for _ in range (mode_index):
-            self.down ()
-        self.enter () # commit value
+            self.key_down ()
+        self.key_enter () # commit value
         return self.key()
     
     def setT15 (self, celsius):
