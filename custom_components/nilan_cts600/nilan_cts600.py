@@ -53,6 +53,11 @@ def parseCelsius (string):
     """ Assuming STRING contains a number with a °C suffix, return that number. """
     return parseLastNumber(string[0:string.find('°C')])
 
+def parseFlow (string):
+    """ Assuming STRING contains a number 1-4 delimited like >num<, return that number."""
+    flowText = re.findall ('>([1-4])<', string)
+    return int (flowText[0], 10) if flowText else None
+
 def findUSB (dev='/dev/'):
     for ttyusb in filter(lambda x: re.search('^ttyUSB[0-9]*', x), os.listdir(dev)):
         return dev + ttyusb
@@ -328,6 +333,12 @@ class CTS600:
         self.preset_single_register (0x104, self.remote_version)
         
     def key (self, key=0):
+        """Transmit a keypress message to CTS600. KEY is a bitmap of
+        the keys pressed. CTS600 will respond with more or less random
+        register updates, and a zero KEY bitmap is effectively a
+        generic request for state update from CTS600.
+
+        """
         self.wi_ro_regs (0x100, key)
         if key != 0:
             self.wi_ro_regs (0x100, key)
@@ -398,6 +409,9 @@ class CTS600:
         newDataText = dict()
 
         def go (x, prop=None):
+            """Assuming X is the current display string, append X to
+            TRACE and if PROP is given then insert X into newDataText
+            too. Return X."""
             if prop:
                 newDataText[prop] = x
             trace.append(x)
@@ -405,9 +419,7 @@ class CTS600:
 
         newData['thermostat'] = parseCelsius(go(self.resetMenu(), 'thermostat'))
         newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
-        newDataText['flow'] = trace[-1]
-        flowText = re.findall ('>([1-4])<', go (self.display(), 'flow'))
-        newData['flow'] = int (flowText[0], 10) if flowText else None
+        newData['flow'] = parseFlow (go (self.display(), 'flow'))
         go (self.up())
         newData['status'] = go(self.enter(), 'status').split(None, 2)[1]
         newData['T15'] = parseCelsius (go(self.down(), 'T15'))
@@ -434,18 +446,38 @@ class CTS600:
         currentThermostat = parseCelsius(self.resetMenu())
         if f'{currentThermostat}' != getBlinkText (self.enter()):
             x = self.key()
-            raise Exception ('Failed to enter thermostat enter mode.', x, getBlinkText (x))
+            raise Exception ('Failed to enter thermostat input mode.', x, getBlinkText (x))
         if celsius > currentThermostat:
             for _ in range (0, celsius - currentThermostat):
                 self.up()
         elif celsius < currentThermostat:
             for _ in range (0, currentThermostat - celsius):
                 self.down()
-        self.enter()
-        self.data['thermostatTxt'] = self.esc()
-        self.data['thermostat'] = parseCelsius (self.data['thermostatTxt'])
-        return self.data['thermostat']
+        return self.enter()
 
+    def setFlow (self, flow):
+        """ Set fan flow level to FLOW, i.e. 1-4. """
+        def getBlinkText (string):
+            return string[string.find('{')+1:string.find('}')].strip()
+
+        if not 1 <= flow <= 4:
+            raise Exception (f'Illegal flow value: {flow}')
+
+        currentFlow = parseFlow(self.resetMenu())
+        self.enter() # thermostat
+        self.enter() # heat/cool mode
+        if f'>{currentFlow}<' != getBlinkText (self.enter()):
+            x = self.key()
+            raise Exception ('Failed to flow input mode.', x, getBlinkText (x))
+        if flow > currentFlow:
+            for _ in range (0, flow - currentFlow):
+                self.up()
+        elif flow < currentFlow:
+            for _ in range (0, currentFlow - flow):
+                self.down()
+        self.enter() # commit value
+        return self.key()
+    
     def setT15 (self, celsius):
         """ Set the T15 room sensor temperature. """
         self.log ('setT15: %s -> %s', celsius, nilanCelsiusToAD (celsius))
