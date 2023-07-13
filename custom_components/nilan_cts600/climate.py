@@ -204,7 +204,6 @@ class HaCTS600 (ClimateEntity):
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        _LOGGER.debug ('target_temp %s', self.cts600.data)
         return self.cts600.data.get('thermostat', None)
 
     @property
@@ -227,15 +226,16 @@ class HaCTS600 (ClimateEntity):
         then await that job. Use self._lock to serialize access to the
         underlying API. Also implement self.retries."""
         async with self._lock:
-            _LOGGER.debug ("Call: %s %s", method.__func__.__name__, args)
             for attempt in range(1, self.retries+1):
+                _LOGGER.debug ("Call try %d: %s %s", attempt, method.__func__.__name__, args)
                 try:
                     result = await self.hass.async_add_executor_job (method, *args)
+                    break
                 except (TimeoutError, NilanCTS600ProtocolError) as e:
                     _LOGGER.debug ("Exception %s: %s %s", e.__class__.__name__, method.__func__.__name__, args)
                     if not attempt<self.retries:
                         raise e
-            _LOGGER.debug ("Result: %s %s => %s", method.__func__.__name__, args, result)
+            _LOGGER.debug ("Call result: %s %s => %s", method.__func__.__name__, args, result)
             return result
 
     def initialize (self):
@@ -258,7 +258,7 @@ class HaCTS600 (ClimateEntity):
 
     async def async_update (self):
         state = await self.updateData ()
-        _LOGGER.debug("Got new state: %s", state)
+        # _LOGGER.debug("Got new state: %s", state)
         return state
 
     
