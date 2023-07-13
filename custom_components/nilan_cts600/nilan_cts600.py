@@ -404,9 +404,9 @@ class CTS600:
     def updateData (self):
         """ Cycle through the "SHOW DATA" menu and record the relevant values.
         """
-        trace = []
-        newData = dict()
-        newDataText = dict()
+        newData = dict() # Record fresh data values here.
+        newTrace = [] # Record the menu displays we cycle through.
+        newDataText = dict() # Record the display texts each data value is based on here.
 
         def go (x, prop=None):
             """Assuming X is the current display string, append X to
@@ -414,12 +414,14 @@ class CTS600:
             too. Return X."""
             if prop:
                 newDataText[prop] = x
-            trace.append(x)
+            newTrace.append(x)
             return x
 
+        # First record the three values from the top-level menu display:
         newData['thermostat'] = parseCelsius(go(self.resetMenu(), 'thermostat'))
         newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
         newData['flow'] = parseFlow (go (self.display(), 'flow'))
+        # Now enter the DISPLAY DATA menu and record the various data entries:
         go (self.up())
         newData['status'] = go(self.enter(), 'status').split(None, 2)[1]
         newData['T15'] = parseCelsius (go(self.down(), 'T15'))
@@ -429,10 +431,11 @@ class CTS600:
         newData['T6'] = parseCelsius (go(self.down(), 'T6'))
         newData['inletFlow'] = parseLastNumber (go(self.down(), 'inletFlow'))
         newData['exhaustFlow'] = parseLastNumber (go(self.down(), 'exhaustFlow'))
+        # Record the state of the status LED
         newData['LED'] = self.led()
         self.data = newData
         self.dataText = newDataText
-        self._data_trace = trace
+        self._data_trace = newTrace
         return newData
 
     def setThermostat (self, celsius):
