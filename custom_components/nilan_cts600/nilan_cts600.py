@@ -49,7 +49,7 @@ def frame (*args):
 def parseLastNumber (string):
     return int (string.split()[-1], 10)
     
-def parseCelcius (string):
+def parseCelsius (string):
     return parseLastNumber(string[0:string.find('°C')])
 
 def findUSB (dev='/dev/'):
@@ -88,15 +88,14 @@ def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='
     if mode != 0:
         output += endBlink
     return output
-        
 
 def nilanADToCelsius (advalue):
     """ Convert AD temperature sensor value to celsius. """
-    return 59.3 - (advalue * (10 / (262 - 195)))
+    return 57.0 - (advalue * ((34 - 12) / (328 - 168)))
 
 def nilanCelsiusToAD (celsius):
     """ Convert Celsius to AD temperature sensor value. """
-    return int ((59.3 - celsius) / (10 / (262 - 195)))
+    return round ((57.0 - celsius) / ((34 - 12) / (328 - 168)))
 
 def appendCRC (frame):
     crc = computeCRC (frame)
@@ -385,28 +384,31 @@ class CTS600:
         go (self.esc())
         go (self.esc())
         newDataText['thermostat'] = trace[-1]
-        newData['thermostat'] = parseCelcius(newDataText['thermostat'])
+        newData['thermostat'] = parseCelsius(newDataText['thermostat'])
         newDataText['mode'] = trace[-1]
         newData['mode'] = newDataText['mode'].split (None, 2)[0]
+        newDataText['flow'] = trace[-1]
+        flowText = re.findall ('>([1-4])<', newDataText['flow'])
+        newData['flow'] = int (flowText[0], 10) if flowText else None
         go (self.up())
         go (self.enter())
         newDataText['status'] = trace[-1]
         newData['status'] = newDataText['status'].split(None, 2)[1]
         go (self.down())
         newDataText['T15'] = trace[-1]
-        newData['T15'] = parseCelcius (newDataText['T15'])
+        newData['T15'] = parseCelsius (newDataText['T15'])
         go (self.down())
         newDataText['T2'] = trace[-1]
-        newData['T2'] = parseCelcius (newDataText['T2'])
+        newData['T2'] = parseCelsius (newDataText['T2'])
         go (self.down())
         newDataText['T1'] = trace[-1]
-        newData['T1'] = parseCelcius (newDataText['T1'])
+        newData['T1'] = parseCelsius (newDataText['T1'])
         go (self.down())
         newDataText['T5'] = trace[-1]
-        newData['T5'] = parseCelcius (newDataText['T5'])
+        newData['T5'] = parseCelsius (newDataText['T5'])
         go (self.down())
         newDataText['T6'] = trace[-1]
-        newData['T6'] = parseCelcius (newDataText['T6'])
+        newData['T6'] = parseCelsius (newDataText['T6'])
         go (self.down())
         newDataText['inletFlow'] = trace[-1]
         newData['inletFlow'] = parseLastNumber (newDataText['inletFlow'])
@@ -419,34 +421,35 @@ class CTS600:
         self._data_trace = trace
         return newData
 
-    def setThermostat (self, celcius):
+    def setThermostat (self, celsius):
         """ Set thermostat degrees. """
         def getBlinkText (string):
             return string[string.find('{')+1:string.find('}')].strip()
 
-        if not 5 <= celcius <= 30:
-            raise Exception (f'Illegal thermostat value: {celcius}')
+        if not 5 <= celsius <= 30:
+            raise Exception (f'Illegal thermostat value: {celsius}')
 
         self.esc()
         self.esc()
-        currentThermostat = parseCelcius(self.esc())
+        currentThermostat = parseCelsius(self.esc())
         if f'{currentThermostat}' != getBlinkText (self.enter()):
             x = self.key()
             raise Exception ('Failed to enter thermostat enter mode.', x, getBlinkText (x))
-        if celcius > currentThermostat:
-            for _ in range (0, celcius - currentThermostat):
+        if celsius > currentThermostat:
+            for _ in range (0, celsius - currentThermostat):
                 self.up()
-        elif celcius < currentThermostat:
-            for _ in range (0, currentThermostat - celcius):
+        elif celsius < currentThermostat:
+            for _ in range (0, currentThermostat - celsius):
                 self.down()
         self.enter()
         self.data['thermostatTxt'] = self.esc()
-        self.data['thermostat'] = parseCelcius (self.data['thermostatTxt'])
+        self.data['thermostat'] = parseCelsius (self.data['thermostatTxt'])
         return self.data['thermostat']
 
-    def setT15 (self, celcius):
+    def setT15 (self, celsius):
         """ Set the T15 room sensor temperature. """
-        self.wi_ro_regs (0x2a, nilanCelsiusToAD (celcius))
+        self.log ('setT15: %s -> %s', celsius, nilanCelsiusToAD (celsius))
+        self.wi_ro_regs (0x2a, nilanCelsiusToAD (celsius))
         
     
 def test(port=None):
