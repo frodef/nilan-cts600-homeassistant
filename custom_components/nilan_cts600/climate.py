@@ -173,7 +173,7 @@ class HaCTS600 (ClimateEntity):
         """Return hvac mode ie. heat, cool, fan only."""
         cts600mode = self.cts600.data.get ('mode')
         mode = self._mode_map.get(cts600mode, None) if cts600mode else None
-        _LOGGER.debug ('hvac mode %s -> %s', cts600mode, mode)
+        # _LOGGER.debug ('hvac mode %s -> %s', cts600mode, mode)
         return mode
 
     @property
@@ -212,6 +212,11 @@ class HaCTS600 (ClimateEntity):
         """Return the current temperature."""
         return self.cts600.data.get ('T15', None)
 
+    async def async_set_fan_mode(self, fan_mode):
+        """Set the fan mode."""
+        _LOGGER.debug ('set fan_mode %s', fan_mode)
+        await self.setFlow (int(fan_mode))
+    
     async def _call (self, method, *args):
         """Make a synchronous call to CTS600 by creating a job and
         then await that job. Use self._lock to serialize access to the
@@ -239,6 +244,9 @@ class HaCTS600 (ClimateEntity):
 
     def setT15 (self, celcius):
         return self._call (self.cts600.setT15, celcius)
+
+    def setFlow (self, flow):
+        return self._call (self.cts600.setFlow, flow)
 
     async def async_update (self):
         state = await self.updateData ()
