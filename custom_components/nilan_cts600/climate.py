@@ -212,7 +212,12 @@ class HaCTS600 (ClimateEntity):
         """Return the current temperature."""
         return self.cts600.data.get ('T15', None)
 
-    async def async_set_fan_mode(self, fan_mode):
+    async def async_set_temperature (self, temperature=None, **kwargs):
+        """Set target temperature."""
+        _LOGGER.debug ('set fan_temperature %s', temperature)
+        await self.setThermostat (int(temperature))
+    
+    async def async_set_fan_mode (self, fan_mode):
         """Set the fan mode."""
         _LOGGER.debug ('set fan_mode %s', fan_mode)
         await self.setFlow (int(fan_mode))
@@ -247,6 +252,9 @@ class HaCTS600 (ClimateEntity):
 
     def setFlow (self, flow):
         return self._call (self.cts600.setFlow, flow)
+
+    def setThermostat (self, celsius):
+        return self._call (self.cts600.setThermostat, celsius)
 
     async def async_update (self):
         state = await self.updateData ()
