@@ -50,6 +50,7 @@ def parseLastNumber (string):
     return int (string.split()[-1], 10)
     
 def parseCelsius (string):
+    """ Assuming STRING contains a number with a °C suffix, return that number. """
     return parseLastNumber(string[0:string.find('°C')])
 
 def findUSB (dev='/dev/'):
@@ -278,7 +279,7 @@ class CTS600:
         (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
         if (not crcOK):
             self.crc_fails += 1
-            print (f'CRC Fail! {request}')
+            self.log ('CRC Fail: %s', request)
             return False
         handler = getattr(self, self._ack_handlers.get(ackOP, 'None'), None)
         if handler:
@@ -354,7 +355,27 @@ class CTS600:
     def on (self):
         return self.key (0x20)
 
+    def resetMenu (self, maxTries=10):
+        """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
+        old_display = self.display()
+        new_display = self.esc()
+        countTries = 0
+        while new_display != old_display:
+            old_display = new_display
+            new_display = self.esc()
+            countTries += 1
+            if countTries >= maxTries:
+                raise NilanCTS600Exception (f'Unable to resetMenu: {old_display} -> {new_display}')
+        return new_display
+
     def displayRow (self, row, startBlink='{', endBlink='}'):
+        """Construct a string representation of the CTS600 display's
+        row number ROW.  Any text that should be blinking is put
+        inside curly brackets.
+
+        NB: Will not query CTS600 for updated data.
+
+        """
         bytesPerRow = self.columns + int(self.columns/4)
         startRegister = 0x200 + row*bytesPerRow
         return nilanStringApplyAttribute(
@@ -376,45 +397,26 @@ class CTS600:
         newData = dict()
         newDataText = dict()
 
-        def go (x):
+        def go (x, prop=None):
+            if prop:
+                newDataText[prop] = x
             trace.append(x)
+            return x
 
-        go (self.esc())
-        go (self.esc())
-        go (self.esc())
-        go (self.esc())
-        newDataText['thermostat'] = trace[-1]
-        newData['thermostat'] = parseCelsius(newDataText['thermostat'])
-        newDataText['mode'] = trace[-1]
-        newData['mode'] = newDataText['mode'].split (None, 2)[0]
+        newData['thermostat'] = parseCelsius(go(self.resetMenu(), 'thermostat'))
+        newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
         newDataText['flow'] = trace[-1]
-        flowText = re.findall ('>([1-4])<', newDataText['flow'])
+        flowText = re.findall ('>([1-4])<', go (self.display(), 'flow'))
         newData['flow'] = int (flowText[0], 10) if flowText else None
         go (self.up())
-        go (self.enter())
-        newDataText['status'] = trace[-1]
-        newData['status'] = newDataText['status'].split(None, 2)[1]
-        go (self.down())
-        newDataText['T15'] = trace[-1]
-        newData['T15'] = parseCelsius (newDataText['T15'])
-        go (self.down())
-        newDataText['T2'] = trace[-1]
-        newData['T2'] = parseCelsius (newDataText['T2'])
-        go (self.down())
-        newDataText['T1'] = trace[-1]
-        newData['T1'] = parseCelsius (newDataText['T1'])
-        go (self.down())
-        newDataText['T5'] = trace[-1]
-        newData['T5'] = parseCelsius (newDataText['T5'])
-        go (self.down())
-        newDataText['T6'] = trace[-1]
-        newData['T6'] = parseCelsius (newDataText['T6'])
-        go (self.down())
-        newDataText['inletFlow'] = trace[-1]
-        newData['inletFlow'] = parseLastNumber (newDataText['inletFlow'])
-        go (self.down())
-        newDataText['exhaustFlow'] = trace[-1]
-        newData['exhaustFlow'] = parseLastNumber (newDataText['exhaustFlow'])
+        newData['status'] = go(self.enter(), 'status').split(None, 2)[1]
+        newData['T15'] = parseCelsius (go(self.down(), 'T15'))
+        newData['T2'] = parseCelsius (go(self.down(), 'T2'))
+        newData['T1'] = parseCelsius (go(self.down(), 'T1'))
+        newData['T5'] = parseCelsius (go(self.down(), 'T5'))
+        newData['T6'] = parseCelsius (go(self.down(), 'T6'))
+        newData['inletFlow'] = parseLastNumber (go(self.down(), 'inletFlow'))
+        newData['exhaustFlow'] = parseLastNumber (go(self.down(), 'exhaustFlow'))
         newData['LED'] = self.led()
         self.data = newData
         self.dataText = newDataText
@@ -422,16 +424,14 @@ class CTS600:
         return newData
 
     def setThermostat (self, celsius):
-        """ Set thermostat degrees. """
+        """ Set thermostat to CELSIUS degrees. """
         def getBlinkText (string):
             return string[string.find('{')+1:string.find('}')].strip()
 
         if not 5 <= celsius <= 30:
             raise Exception (f'Illegal thermostat value: {celsius}')
 
-        self.esc()
-        self.esc()
-        currentThermostat = parseCelsius(self.esc())
+        currentThermostat = parseCelsius(self.resetMenu())
         if f'{currentThermostat}' != getBlinkText (self.enter()):
             x = self.key()
             raise Exception ('Failed to enter thermostat enter mode.', x, getBlinkText (x))
