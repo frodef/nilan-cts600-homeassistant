@@ -480,6 +480,28 @@ class CTS600:
                 self.down()
         self.enter() # commit value
         return self.key()
+
+    def setMode (self, mode):
+        """ Set operation mode to MODE, i.e. HEAT, COOL, or AUTO. """
+        # ordering of all_modes is important; it corresponds to CTS600
+        # menu up to down.
+        all_modes = ['AUTO', 'COOL', 'HEAT']
+        if not mode in all_modes:
+            raise Exception (f'Illegal operation mode: {mode}')
+        mode_index = all_modes.index (mode)
+        # operate menu based on mode position, so as to operate
+        # independent of CTS600 language setting.
+        self.resetMenu()
+        self.enter() # thermostat
+        self.enter() # mode
+        # now ensure we're at topmost mode, i.e. 'AUTO'
+        self.up()
+        self.up()
+        self.up()
+        for _ in range (mode_index):
+            self.down ()
+        self.enter () # commit value
+        return self.key()
     
     def setT15 (self, celsius):
         """ Set the T15 room sensor temperature. """
