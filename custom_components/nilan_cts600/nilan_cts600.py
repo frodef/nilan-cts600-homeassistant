@@ -63,6 +63,23 @@ def findUSB (dev='/dev/'):
         return dev + ttyusb
     raise Exception ('No USB device found.')
 
+def cycleToMenuEnd (initText, cycler, maxTries=10, match=None):
+    """ Repeat CYCLER function until it returns the same string, or until it matches MATCH."""
+    if match and re.findall (match, initText):
+        return True
+    old_text = initText
+    tries = 0
+    while (new_text := cycler()) != old_text:
+        # print (f'cycle: {new_text}')
+        if match and re.findall (match, new_text):
+            return True
+        tries += 1
+        if tries >= maxTries:
+            raise NilanCTS600Exception (f'Unable to cycle menu: {old_text} -> {new_text}')
+        old_text = new_text
+
+    return False
+
 _nilanCodePage = {
     8: 198,
     9: 216,
@@ -348,10 +365,14 @@ class CTS600:
     def key_esc (self):
         return self.key (0x01)
     
-    def key_up (self):
+    def key_up (self, repeat=1):
+        for _ in range (repeat-1):
+            self.key (0x02)
         return self.key(0x02)
 
-    def key_down (self):
+    def key_down (self, repeat=1):
+        for _ in range(repeat-1):
+            self.key (0x04)
         return self.key(0x04)
 
     def key_enter (self):
@@ -478,6 +499,25 @@ class CTS600:
         self.key_enter() # commit value
         return self.key()
 
+    def setLanguage (self, language):
+        """ Set CTS600 display language to the first language that matches LANGUAGE. """
+        def getBlinkText (string):
+            return string[string.find('{')+1:string.find('}')].strip()
+
+        self.resetMenu ()
+        self.key_down (repeat=8)
+        if (cycleToMenuEnd (getBlinkText(self.key_enter ()),
+                            lambda: getBlinkText(self.key_up()),
+                            match=language)
+            or cycleToMenuEnd (getBlinkText(self.display ()),
+                               lambda: getBlinkText(self.key_down()),
+                               match=language)):
+            self.key_enter() # commit
+            return True
+        else:
+            self.key_esc()
+            return False
+        
     def setMode (self, mode):
         """ Set operation mode to MODE, i.e. HEAT, COOL, or AUTO. """
         # ordering of all_modes is important; it corresponds to CTS600
