@@ -31,13 +31,10 @@ DATA_KEY = "climate." + DOMAIN
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        # vol.Required(CONF_HOST): cv.string,
-        # vol.Required(CONF_TOKEN): vol.All(cv.string, vol.Length(min=32, max=32)),
-        # vol.Required(CONF_SENSOR): cv.entity_id,
+        vol.Required("port"): vol.Coerce(str),
         vol.Optional("name", default="CTS600"): cv.string,
         vol.Optional("retries", default=2): vol.Coerce(int),
-        vol.Optional("port"): vol.Coerce(str),
-        vol.Optional("sensor"): cv.entity_id,
+        vol.Optional("sensor_T15"): cv.entity_id,
     }
 )
 
@@ -53,7 +50,9 @@ async def async_setup_platform(
         hass.data[DATA_KEY] = {}
 
     _LOGGER.debug ("setup_platform: %s // %s", config, discovery_info)
-    port = config.get ('port') or findUSB ()
+    port = config.get ('port')
+    if port == 'auto':
+        port =  findUSB ()
     retries = config.get ('retries')
     if not port:
         raise PlatformNotReady
@@ -66,7 +65,7 @@ async def async_setup_platform(
 
     device = HaCTS600 (hass, cts600, config.get('name'),
                        retries=config.get('retries'),
-                       sensor_entity_id=config.get ('sensor'),
+                       sensor_entity_id=config.get ('sensor_T15'),
                        )
     try:
         await device.initialize ()
@@ -76,9 +75,6 @@ async def async_setup_platform(
 
     hass.data[DATA_KEY][port] = device
     async_add_entities([device], update_before_add=True)
-    # test = await device.key(1)
-    # _LOGGER.debug ("test: %s", test)
-
 
 class HaCTS600 (ClimateEntity):
     """
@@ -91,8 +87,10 @@ class HaCTS600 (ClimateEntity):
         # Map CTS600 display text to HVACMode.
         'HEAT': HVACMode.HEAT,
         'COOL': HVACMode.COOL,
+        'AUTO': HVACMode.AUTO,
         'OFF': HVACMode.OFF,
     }
+    _mode_imap = {v:k for k,v in _mode_map.items()}
     _action_map = {
         # Map CTS600 display text to HVACAction.
         'HEATING': HVACAction.HEATING,
@@ -220,7 +218,21 @@ class HaCTS600 (ClimateEntity):
         """Set the fan mode."""
         _LOGGER.debug ('set fan_mode %s', fan_mode)
         await self.setFlow (int(fan_mode))
-    
+
+    async def async_set_hvac_mode(self, hvac_mode):
+        """Set new target hvac mode."""
+        _LOGGER.debug ('set hvac_mode %s', hvac_mode)
+        display = await self.resetMenu()
+        current_mode = display.split()[0]
+        if self._mode_map[current_mode] == hvac_mode:
+            return
+        elif hvac_mode == HVACMode.OFF:
+            await self.key_off()
+        else:
+            if current_mode == 'OFF':
+                await self.key_on()
+            await self.setMode (self._mode_imap[hvac_mode])
+        
     async def _call (self, method, *args):
         """Make a synchronous call to CTS600 by creating a job and
         then await that job. Use self._lock to serialize access to the
@@ -238,12 +250,19 @@ class HaCTS600 (ClimateEntity):
             _LOGGER.debug ("Call result: %s %s => %s", method.__func__.__name__, args, result)
             return result
 
-    def initialize (self):
-        return self._call (self.cts600.initialize)
+    async def initialize (self):
+        await self._call (self.cts600.initialize)
+        await self._call (self.cts600.setLanguage, "ENGLISH")
 
     def key (self, key=0):
         return self._call (self.cts600.key, key)
 
+    def key_on (self):
+        return self._call (self.cts600.key_on)
+
+    def key_off (self):
+        return self._call (self.cts600.key_off)
+    
     def updateData (self):
         return self._call (self.cts600.updateData)
 
@@ -255,6 +274,12 @@ class HaCTS600 (ClimateEntity):
 
     def setThermostat (self, celsius):
         return self._call (self.cts600.setThermostat, celsius)
+
+    def resetMenu (self):
+        return self._call (self.cts600.resetMenu)
+
+    def setMode (self, mode):
+        return self._call (self.cts600.setMode, mode)
 
     async def async_update (self):
         state = await self.updateData ()
