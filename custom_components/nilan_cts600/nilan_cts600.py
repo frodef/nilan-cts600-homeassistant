@@ -66,19 +66,21 @@ def findUSB (dev='/dev/'):
 def cycleToMenuEnd (initText, cycler, maxTries=10, match=None):
     """ Repeat CYCLER function until it returns the same string, or until it matches MATCH."""
     if match and re.findall (match, initText):
-        return True
+        return initText
     old_text = initText
     tries = 0
     while (new_text := cycler()) != old_text:
         # print (f'cycle: {new_text}')
         if match and re.findall (match, new_text):
-            return True
+            return new_text
         tries += 1
         if tries >= maxTries:
             raise NilanCTS600Exception (f'Unable to cycle menu: {old_text} -> {new_text}')
         old_text = new_text
-
-    return False
+    if match:
+        return False
+    else:
+        return old_text
 
 _nilanCodePage = {
     8: 198,
@@ -118,7 +120,7 @@ def nilanADToCelsius (advalue):
 
 def nilanCelsiusToAD (celsius):
     """ Convert Celsius to AD temperature sensor value. """
-    return round ((57.0 - celsius) / ((34 - 12) / (328 - 168)))
+    return round ((57.5 - celsius) / ((34 - 12) / (328 - 168)))
 
 def appendCRC (frame):
     crc = computeCRC (frame)
@@ -386,16 +388,7 @@ class CTS600:
 
     def resetMenu (self, maxTries=10):
         """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
-        old_display = self.display()
-        new_display = self.key_esc()
-        countTries = 0
-        while new_display != old_display:
-            old_display = new_display
-            new_display = self.key_esc()
-            countTries += 1
-            if countTries >= maxTries:
-                raise NilanCTS600Exception (f'Unable to resetMenu: {old_display} -> {new_display}')
-        return new_display
+        return cycleToMenuEnd (None, lambda: self.key_esc())
 
     def displayRow (self, row, startBlink='{', endBlink='}'):
         """Construct a string representation of the CTS600 display's
@@ -506,6 +499,7 @@ class CTS600:
 
         self.resetMenu ()
         self.key_down (repeat=8)
+        # Cycle all the way up, then all the way down searching for LANGUAGE.
         if (cycleToMenuEnd (getBlinkText(self.key_enter ()),
                             lambda: getBlinkText(self.key_up()),
                             match=language)
