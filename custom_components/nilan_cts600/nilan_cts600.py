@@ -116,7 +116,7 @@ def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='
 
 def nilanADToCelsius (advalue):
     """ Convert AD temperature sensor value to celsius. """
-    return 57.0 - (advalue * ((34 - 12) / (328 - 168)))
+    return 57.5 - (advalue * ((34 - 12) / (328 - 168)))
 
 def nilanCelsiusToAD (celsius):
     """ Convert Celsius to AD temperature sensor value. """
