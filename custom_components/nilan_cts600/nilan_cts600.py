@@ -114,13 +114,13 @@ def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='
         output += endBlink
     return output
 
-def nilanADToCelsius (advalue):
+def nilanADToCelsius (advalue, x=56.25):
     """ Convert AD temperature sensor value to celsius. """
-    return 57.5 - (advalue * ((34 - 12) / (328 - 168)))
+    return x - (advalue * ((34 - 12) / (328 - 168)))
 
-def nilanCelsiusToAD (celsius):
+def nilanCelsiusToAD (celsius, x=56.25):
     """ Convert Celsius to AD temperature sensor value. """
-    return round ((57.5 - celsius) / ((34 - 12) / (328 - 168)))
+    return round ((x - celsius) / ((34 - 12) / (328 - 168)))
 
 def appendCRC (frame):
     crc = computeCRC (frame)
