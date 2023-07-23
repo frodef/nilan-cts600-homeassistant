@@ -98,6 +98,8 @@ class HaCTS600 (ClimateEntity):
         'OFF': HVACAction.OFF,
     }
     def __init__ (self, hass, cts600, name, retries=1, sensor_entity_id=None):
+        if not hass:
+            raise Exception ("No HASS object!")
         self.hass = hass
         self.cts600 = cts600
         self._name = name
