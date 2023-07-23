@@ -1,0 +1,16 @@
+{
+    "domain": "nilan_cts600",
+    "name": "Nilan CTS600",
+    "codeowners": [
+	"@frodef"
+    ],
+    "config_flow": false,
+    "dependencies": [],
+    "documentation": "https://www.home-assistant.io/integrations/nilan_cts600",
+    "homekit": {},
+    "iot_class": "local_push",
+    "requirements": [
+	"pymodbus==3.3.1"
+    ],
+    "version": "2023.06.0"
+}
