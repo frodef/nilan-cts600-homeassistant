@@ -108,7 +108,7 @@ This integration emulates the physical control panel.
 
 The CTS600 appears to use a pseudo-modbus protocol atop of RS485,
 where the control panel is the master and the ventilation unit
-(controller) is the slave. However, the communications not based on
+(controller) is the slave. However, the communications is not based on
 standard modbus registers. Rather, the CTS600 employs some "custom"
 modbus function codes, such that the basic communications structure
 (after initialization) is like this:
