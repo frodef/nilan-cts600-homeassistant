@@ -102,7 +102,9 @@ These are the configuration entries:
 
 # Operation
 
-This integration emulates the physical control panel.
+This integration emulates the physical control panel. You can
+(currently) not use the physical control panel while using this
+integration.
 
 ## About the CTS600
 
@@ -140,3 +142,32 @@ some consequences of this mode of operation:
   ventilation unit models. Consequently, it's difficult to predict
   interoperability between versions and models, but it should be easy
   to adapt.
+
+## CTS600 technical information tidbits
+
+These are a few pieces of information about the CTS600 I have come
+across that is not directly relevant to the HA integration, but some
+might still find useful.
+
+### Power
+
+The CTS600 provides 12 volts power to the control panel. However, the
+control panel will operate just fine on 5 volts, and so it can be
+hooked up directly to your USB RS486 adapter which typically provides
+5 volts. (This would be e.g. for probing the control panel to figure
+out its operation.)
+
+### Communication breakdown
+
+If you find that your control panel is unable to communicate with the
+ventilation unit, and you are certain the wiring is correct: The most
+likely culprit is the RS485 driver chip that sits on either end of the
+communication. The chip is an
+[ADM483](https://www.analog.com/media/en/technical-documentation/data-sheets/ADM383.pdf)
+8-pin SMD, which is a bit tricky but not impossible to replace for
+someone with a bit of experience with a soldering iron. I've had to
+replace both of mine. For the CTS600 controller in the ventilation
+unit you'll want to remove the PCB from the unit, which is not
+difficult if you just take note of where every plug should go back
+in. The ADM483 is located right next to the communications connector
+on the PCB, on both ends.
