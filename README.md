@@ -77,5 +77,29 @@ control panel.
 
 ![connection](connection.png "Connection")
 
+# Configuration
+
+This integration currently supports only manual configuration in
+configuration.yaml, for example:
+
+`
+climate:
+  platform: nilan_cts600
+  name: LoftCTS600
+  retries: 3
+  sensor_T15: input_number.stuetemp
+  port: /dev/ttyUSB0
+`
+These are the configuration entries:
+
+  * `name`: Any name you choose to identify the ventilation unit.
+  * `retries`: The number of times to retry a CTS600 request before failing.
+  * `sensor_T15`: Names the entity that provides the value for the
+    room temperature, substituting the temperature sensor in the
+    original control panel.
+  * `port`: The device node corresponding to your RS485 adapter. If
+    you have no other USB serial adapters installed, this will be
+    `/dev/ttyUSB0`.
+
 # About the CTS600
 
