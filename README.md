@@ -142,6 +142,17 @@ some consequences of this mode of operation:
   ventilation unit models. Consequently, it's difficult to predict
   interoperability between versions and models, but it should be easy
   to adapt.
+  
+## About the T15 room temperature sensor
+
+The CTS600 protocol uses some unknown internal 16-bit representation
+for the T15 room temperature sensor value. The precision of this
+representation is decent, but it appears to be slightly non-linear
+with respect to the celsius temperature. Currently a linear
+approximation is used. Therefore, the reported T15 value will deviate
+slightly from whatever input value you provide (via the `sensor_t15`
+configuration entry). The error will increase towards the extremes,
+especially below 10°C.
 
 ## CTS600 technical information tidbits
 
@@ -157,7 +168,7 @@ hooked up directly to your USB RS486 adapter which typically provides
 5 volts. (This would be e.g. for probing the control panel to figure
 out its operation.)
 
-### Communication breakdown
+### Communication breakdown?
 
 If you find that your control panel is unable to communicate with the
 ventilation unit, and you are certain the wiring is correct: The most
