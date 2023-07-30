@@ -6,11 +6,11 @@
     ],
     "config_flow": false,
     "dependencies": [],
-    "documentation": "https://www.home-assistant.io/integrations/nilan_cts600",
+    "documentation": "https://github.com/frodef/nilan-cts600-homeassistant",
     "homekit": {},
     "iot_class": "local_push",
     "requirements": [
 	"pymodbus==3.3.1"
     ],
-    "version": "2023.06.0"
+    "version": "2023.07.30"
 }
