@@ -100,5 +100,43 @@ These are the configuration entries:
     you have no other USB serial adapters installed, this will be
     `/dev/ttyUSB0`.
 
-# About the CTS600
+# Operation
 
+This integration emulates the physical control panel.
+
+## About the CTS600
+
+The CTS600 appears to use a pseudo-modbus protocol atop of RS485,
+where the control panel is the master and the ventilation unit
+(controller) is the slave. However, the communications not based on
+standard modbus registers. Rather, the CTS600 employs some "custom"
+modbus function codes, such that the basic communications structure
+(after initialization) is like this:
+
+- The panel sends a custom "request" that informs the controller of
+  the state of the six buttons.
+- The controller "responds" with a somewhat random status update: the
+  text for the display, or the state of the status LED.
+- Repeat forever, several times every second.
+
+The CTS600 will accept and respond to standard modbus register
+commands, but I have not found a way to control or query the
+ventilation controller this way.
+
+## About the emulation of the control panel
+
+Because standard modbus registers don't work, the integration is
+reduced to emulating the physical control panel. That is, it emulates
+pressing the buttons and parsing the display text, just as a human
+would do. This is rather inefficient, but seems to work. These are
+some consequences of this mode of operation:
+- In order to parse the text display, during initialization the
+  integration will switch the controller interface language to
+  english.
+- The precision of temperature values is limited to that displayed on
+  the physical control panel, i.e. mostly whole integers.
+- The integration must make some assumptions about the nature of the
+  controller menus. These might change between controller versions and
+  ventilation unit models. Consequently, it's difficult to predict
+  interoperability between versions and models, but it should be easy
+  to adapt.
