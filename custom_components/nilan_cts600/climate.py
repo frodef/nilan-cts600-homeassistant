@@ -107,7 +107,6 @@ class HaCTS600 (ClimateEntity):
         self._lock = asyncio.Lock()
 
         self._state = None
-        # self._current_temperature = None
         self._last_on_operation = None
         self._fan_mode = None
         self._air_condition_model = None
@@ -209,7 +208,7 @@ class HaCTS600 (ClimateEntity):
     @property
     def current_temperature (self):
         """Return the current temperature."""
-        return self.cts600.data.get ('T15', None)
+        return self.cts600.getT15 ()
 
     async def async_set_temperature (self, temperature=None, **kwargs):
         """Set target temperature."""

@@ -252,6 +252,7 @@ class CTS600:
         self.data = {}
         self.dataText = {}
         self._data_trace = []
+        self._t15_adtemp = None
 
     def log (self, fmt, *args):
         if self._logger:
@@ -436,6 +437,8 @@ class CTS600:
         go (self.key_up())
         newData['status'] = go(self.key_enter(), 'status').split(None, 2)[1]
         newData['T15'] = parseCelsius (go(self.key_down(), 'T15'))
+        if not self._t15_adtemp:
+            self._t15_adtemp = nilanCelsiusToAD (newData['T15'])
         newData['T2'] = parseCelsius (go(self.key_down(), 'T2'))
         newData['T1'] = parseCelsius (go(self.key_down(), 'T1'))
         newData['T5'] = parseCelsius (go(self.key_down(), 'T5'))
@@ -536,9 +539,14 @@ class CTS600:
     
     def setT15 (self, celsius):
         """ Set the T15 room sensor temperature. """
-        self.log ('setT15: %s -> %s', celsius, nilanCelsiusToAD (celsius))
-        self.wi_ro_regs (0x2a, nilanCelsiusToAD (celsius))
-        
+        adtemp = nilanCelsiusToAD (celsius)
+        self.log ('setT15: %s -> %s', celsius, adtemp)
+        self.wi_ro_regs (0x2a, adtemp)
+        self._t15_adtemp = adtemp
+
+    def getT15 (self):
+        """ Get the previously set T15 room sensor temperature, in celsius. """
+        return nilanADToCelsius (self._t15_adtemp) if self._t15_adtemp else None
     
 def test(port=None):
     port = port or findUSB()
