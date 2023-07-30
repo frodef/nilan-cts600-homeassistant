@@ -15,6 +15,8 @@ temperature. You can also set the fan speed (1, 2, 3, or 4). Finally,
 the thermometer in the physical control panel (Nilan sensor T15) is
 replaced with any HA entity, typically a temperature sensor.
 
+![CTS600](https://nilanireland.ie/wp-content/uploads/2013/08/CTS-600-1.png "CTS600")
+
 # What is this integration for? #
 
 The Nilan VPL-15 ventilation unit (and similar units from Nilan) have
@@ -55,15 +57,25 @@ Assistant. I am using a USB serial RS485 (modbus) adapter. These come
 in many shapes and colours. I reccommend the one that is black with
 green screw terminals and a USB pigtail. [Link to
 Aliexpress.](https://www.aliexpress.com/item/1005004520479272.html)
-I'd advice against the blue translucent ones.
+I'd advise against the blue translucent ones.
 
 ![adapter](usb-rs485.webp "Image of adapter")
 
+## Physical connection
+
+The Nilan VPL-15 (and presumably other) unit connects to the physical
+control panel via 4 wires. Two wires provides 12V power, and the
+remaining two are the RS485 A and B communication wires.
+
+Only the two A and B communication wires must be connected to the USB
+adapter. **Do not connect the power wires to the adapter**, as this
+will likely destroy your adapter, and possibly also your PC and/or
+ventilation unit!
+
+The image below identifies the wires on the side of the original
+control panel.
+
+![connection](connection.png "Connection")
+
 # About the CTS600
 
-
-
-
-Connect to your CTS600 via a serial RS485 USB adapter. Programmed for
-interfacing Nilan VPL15. May or may not work with other (old) Nilan
-products with CTS600 interface.
