@@ -82,15 +82,12 @@ control panel.
 This integration currently supports only manual configuration in
 configuration.yaml, for example:
 
-`
     climate:
       platform: nilan_cts600
       name: LoftCTS600
       retries: 3
       sensor_T15: input_number.stuetemp
       port: /dev/ttyUSB0
-
-`
 
 These are the configuration entries:
 
