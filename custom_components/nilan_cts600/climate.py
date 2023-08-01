@@ -122,6 +122,8 @@ class HaCTS600 (ClimateEntity):
         """ Update thermostat with latest (room) temperature from sensor."""
         if new_state.state is None or new_state.state in ["unknown", "unavailable"]:
             return
+        if not self.hass:
+            return
 
         sensor_unit = new_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UnitOfTemperature.CELSIUS
         value = TemperatureConverter.convert(
