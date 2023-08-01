@@ -22,17 +22,17 @@ replaced with any HA entity, typically a temperature sensor.
 The Nilan VPL-15 ventilation unit (and similar units from Nilan) have
 been delivered with a range of control systems over the years,
 starting I believe with simple analog controls back in the day, until
-todays modern CTS602 or CTS700-based control systems that supports
-LAN interfacing, mobile apps and whatnot.
+todays modern CTS602 or CTS700-based control systems that support LAN
+interfacing, mobile apps and whatnot.
 
 This integration is specifically for units controlled via the CTS600
-interface. Historically this is an intermediate technology-obsolete
-now since a number of years-which is digital but not really designed
-to be interfaced or integrated with other systems.
+interface. Historically this is an intermediate technology, and
+obsolete now since a number of years, which is digital but not really
+designed to be interfaced or integrated with other systems.
 
 There exists a different integration in HACS for CTS602-based systems,
 named
-[Nilan](http://homeassistant.home:8123/hacs/repository/487536666).
+[Nilan](https://github.com/veista/nilan).
 
 This integration is created for my Nilan VPL-15 ventilation unit
 controlled by CTS600. There are other Nilan ventilation units provided
