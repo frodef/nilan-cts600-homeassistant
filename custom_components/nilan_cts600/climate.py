@@ -2,6 +2,7 @@
 import logging, asyncio
 
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -80,7 +81,7 @@ async def async_setup_platform(
         raise PlatformNotReady
 
     hass.data[DATA_KEY][port] = device
-    async_add_entities([device], update_before_add=True)
+    async_add_entities([device], update_before_add=False)
 
 class HaCTS600 (ClimateEntity):
     """
@@ -107,8 +108,10 @@ class HaCTS600 (ClimateEntity):
         if not hass:
             raise Exception ("No HASS object!")
         self.hass = hass
-        self.cts600 = cts600
         self._name = name
+        self._unique_id = f"serial-{cts600.port}"
+        
+        self.cts600 = cts600
         self.retries = retries
         self._lock = asyncio.Lock()
 
@@ -123,7 +126,20 @@ class HaCTS600 (ClimateEntity):
                 self.hass.loop.create_task (self._update_T15_state (sensor_entity_id, None, sensor_state))
             async_track_state_change(hass, sensor_entity_id, self._update_T15_state)
 
-        
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device info."""
+        return DeviceInfo(
+            identifiers={
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            name_by_user=self.name,
+            manufacturer="Nilan",
+            name="CTS600",
+            sw_version=None,
+        )
+    
     async def _update_T15_state (self, entity_id, old_state, new_state):
         """ Update thermostat with latest (room) temperature from sensor."""
         if new_state.state is None or new_state.state in ["unknown", "unavailable"]:
@@ -262,6 +278,7 @@ class HaCTS600 (ClimateEntity):
     async def initialize (self):
         await self._call (self.cts600.initialize)
         await self._call (self.cts600.setLanguage, "ENGLISH")
+        _LOGGER.debug ("SlaveID: %s", self.cts600.slaveID())
 
     def key (self, key=0):
         return self._call (self.cts600.key, key)

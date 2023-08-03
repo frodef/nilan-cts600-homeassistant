@@ -74,7 +74,7 @@ class CTS600ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "custom_value": True,
                 }
             }),
-            vol.Required ("sensor_T15"): selector ({
+            vol.Optional ("sensor_T15"): selector ({
                 "entity": {
                     "filter": {
                         "domain": ["sensor", "input_number"]
