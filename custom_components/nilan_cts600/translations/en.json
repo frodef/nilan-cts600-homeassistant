@@ -1,0 +1,21 @@
+{
+    "config": {
+	"step": {
+	    "user": {
+		"description": "This integration emulates (and replaces) the physical Nilan CTS600 control panel.",
+		"data": {
+		    "name": "Name for ventilation unit",
+		    "port": "CTS600-connected RS485 adapter",
+		    "sensor_T15": "Temperature sensor T15",
+		    "retries": "Retries"
+		},
+		"data_description": {
+		    "name": "Identify the ventilation unit controlled by Nilan CTS600.",
+		    "port": "The serial RS485 adapter wired to Nilan CTS600.",
+		    "sensor_T15": "An entity that provides the room temperature.",
+		    "retries": "Number of times to retry RS485 communications before giving up."
+		}
+	    }
+	}
+    }
+}
