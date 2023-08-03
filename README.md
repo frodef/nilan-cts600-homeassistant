@@ -68,9 +68,9 @@ control panel via 4 wires. Two wires provides 12V power, and the
 remaining two are the RS485 A and B communication wires.
 
 Only the two A and B communication wires must be connected to the USB
-adapter. **Do not connect the power wires to the adapter**, as this
-will likely destroy your adapter, and possibly also your PC and/or
-ventilation unit!
+adapter. These will be labeled on the adapter. **Do not connect the
+power wires to the adapter**, as this will likely destroy your
+adapter, and possibly also your PC and/or ventilation unit!
 
 The image below identifies the wires on the side of the original
 control panel.
