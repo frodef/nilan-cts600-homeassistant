@@ -3,6 +3,7 @@ import logging, asyncio
 
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import (
     UnitOfTemperature,
@@ -38,6 +39,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     }
 )
 
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """ foo """
+    _LOGGER.debug ("setup_entry: %s", entry.data)
+    await async_setup_platform (hass, entry.data, async_add_entities)
+    
 async def async_setup_platform(
         hass: HomeAssistant,
         config: ConfigType,
@@ -53,7 +59,7 @@ async def async_setup_platform(
     port = config.get ('port')
     if port == 'auto':
         port =  findUSB ()
-    retries = config.get ('retries')
+    retries = int(config.get ('retries', 2))
     if not port:
         raise PlatformNotReady
     try:
@@ -64,7 +70,7 @@ async def async_setup_platform(
         raise PlatformNotReady
 
     device = HaCTS600 (hass, cts600, config.get('name'),
-                       retries=config.get('retries'),
+                       retries=retries,
                        sensor_entity_id=config.get ('sensor_T15'),
                        )
     try:
