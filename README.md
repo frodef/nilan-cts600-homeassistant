@@ -79,8 +79,17 @@ control panel.
 
 # Configuration
 
-This integration currently supports only manual configuration in
-configuration.yaml, for example:
+This integration supports UI configuration and manual configuration in
+configuration.yaml.
+
+## UI configuration
+
+Configuration via the UI is hopefully self-explanatory. See also
+documentation for YAML configuration below.
+
+## YAML configuration
+
+This is an example configuration for `configuration.yaml`:
 
     climate:
       platform: nilan_cts600
