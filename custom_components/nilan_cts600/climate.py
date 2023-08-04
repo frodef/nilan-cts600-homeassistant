@@ -1,5 +1,5 @@
 
-import logging, asyncio
+import logging, asyncio, os
 
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.entity import DeviceInfo
@@ -13,7 +13,7 @@ from homeassistant.const import (
 
 from homeassistant.helpers.event import async_track_state_change
 from homeassistant.exceptions import PlatformNotReady
-from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity
+from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity, ClimateEntityDescription
 from homeassistant.util.unit_conversion import TemperatureConverter
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -25,7 +25,11 @@ from homeassistant.components.climate.const import (
 )
 
 from .const import DOMAIN
-from .nilan_cts600 import CTS600, NilanCTS600ProtocolError, findUSB
+from .nilan_cts600 import CTS600, NilanCTS600ProtocolError, findUSB, nilanString
+
+if os.uname()[1] == 'x390':
+    # development mockup device
+    from .nilan_cts600 import CTS600Mockup as CTS600
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +56,7 @@ async def async_setup_platform(
         discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up the platform."""
-    from .nilan_cts600 import CTS600, NilanCTS600ProtocolError, findUSB
+    # from .nilan_cts600 import CTS600, NilanCTS600ProtocolError, findUSB
     if DATA_KEY not in hass.data:
         hass.data[DATA_KEY] = {}
 
@@ -109,7 +113,7 @@ class HaCTS600 (ClimateEntity):
             raise Exception ("No HASS object!")
         self.hass = hass
         self._name = name
-        self._unique_id = f"serial-{cts600.port}"
+        self._attr_unique_id = f"serial-{cts600.port}"
         
         self.cts600 = cts600
         self.retries = retries
@@ -119,27 +123,33 @@ class HaCTS600 (ClimateEntity):
         self._last_on_operation = None
         self._fan_mode = None
         self._air_condition_model = None
+        self._t15_fallback = None
 
+        self.entity_description = ClimateEntityDescription(
+            key='nilan_cts600',
+            icon='mdi:hvac'
+        )
+        
+        slaveID = self.cts600.slaveID()
+        product = nilanString(slaveID['product'])
+        self._attr_device_info = DeviceInfo(
+            identifiers={
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            manufacturer="Nilan",
+            model=product,
+            sw_version=f"sw={slaveID['softwareVersion']}-protocol={slaveID['protocolVersion']}",
+        )
+        
         if sensor_entity_id:
             sensor_state = hass.states.get(sensor_entity_id)
             if sensor_state:
                 self.hass.loop.create_task (self._update_T15_state (sensor_entity_id, None, sensor_state))
             async_track_state_change(hass, sensor_entity_id, self._update_T15_state)
+        else:
+            self._t15_fallback = 21
 
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return the device info."""
-        return DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self.unique_id)
-            },
-            name_by_user=self.name,
-            manufacturer="Nilan",
-            name="CTS600",
-            sw_version=None,
-        )
-    
     async def _update_T15_state (self, entity_id, old_state, new_state):
         """ Update thermostat with latest (room) temperature from sensor."""
         if new_state.state is None or new_state.state in ["unknown", "unavailable"]:
@@ -308,8 +318,10 @@ class HaCTS600 (ClimateEntity):
         return self._call (self.cts600.setMode, mode)
 
     async def async_update (self):
+        if self._t15_fallback:
+            await self.setT15 (self._t15_fallback)
+            self._t15_fallback = None
         state = await self.updateData ()
-        # _LOGGER.debug("Got new state: %s", state)
         return state
 
     
