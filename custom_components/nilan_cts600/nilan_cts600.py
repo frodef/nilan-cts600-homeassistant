@@ -569,11 +569,9 @@ class CTS600Mockup (CTS600):
         CTS600.initialize (self)
         for i in range (0, 0x200):
             self.output_bits[i] = 0
-        import threading, time
-        def doit ():
-            time.sleep (5)
-            self.slave_id = self.mockup_slave_id
-        threading.Thread (target=doit).start()
+        import time
+        time.sleep (1)
+        self.slave_id = self.mockup_slave_id
     
     def connect (self):
         pass
