@@ -97,7 +97,9 @@ def nilanString (buffer):
                          encoding='latin-1')
 
 def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='}'):
-    """ Apply string attribute, i.e. blinking, according to bits in attributeData. """
+    """Apply string attribute, i.e. blinking, according to bits in
+    attributeData. That is, if a number should blink, enclose it in
+    curly brackets."""
     output = ""
     mode = 0
     for i in range (0, len(string)):
@@ -547,7 +549,67 @@ class CTS600:
     def getT15 (self):
         """ Get the previously set T15 room sensor temperature, in celsius. """
         return nilanADToCelsius (self._t15_adtemp) if self._t15_adtemp else None
+
+class CTS600Mockup (CTS600):
+    """ A no-op pseudo-device just for testing and debugging. """
+    data = {'thermostat': 21,
+            'mode': 'COOL',
+            'flow': 2,
+            'status': 'COOLING',
+            'T15': 23,
+            'T2': 6,
+            'T1': 16,
+            'T5': 4,
+            'T6': 39,
+            'inletFlow': 2,
+            'exhaustFlow': 2,
+            'LED': 'on'}
     
+    def doRequest (self, request, requestFrame=[]):
+        pass
+
+    def initialize (self):
+        CTS600.initialize (self)
+        for i in range (0, 0x200):
+            self.output_bits[i] = 0
+    
+    def connect (self):
+        pass
+
+    def setThermostat (self, celsius):
+        self.data['thermostat'] = celsius
+        return ""
+
+    def setMode (self, mode):
+        pass
+
+    def slaveID (self):
+        """ Output from my VPL-15 """
+        return {'slaveID': 16,
+                'runStatus': 1,
+                'errorStatus': 0,
+                'resetStatus': 1,
+                'protocolVersion': 100,
+                'softwareVersion': 131,
+                'softwareDate': 0,
+                'softwareTime': 0,
+                'product': b'6551720001',
+                'numofOutputBits': 0,
+                'numofLEDs': 0,
+                'numofInputBits': 0,
+                'numofKeys': 0,
+                'numofOutputRegisters': 0,
+                'numofInputRegisters': 0,
+                'reserved': b'\x00\x00',
+                'numofActions': 0,
+                'displayRows': 2,
+                'displayColumns': 8,
+                'displayType': 1,
+                'displayDataType': 1}
+
+    def updateData (self):
+        return 
+        
 def test(port=None):
     port = port or findUSB()
     client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
