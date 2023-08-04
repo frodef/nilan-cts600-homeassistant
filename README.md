@@ -156,12 +156,12 @@ some consequences of this mode of operation:
 
 The CTS600 protocol uses some unknown internal 16-bit representation
 for the T15 room temperature sensor value. The precision of this
-representation is decent, but it appears to be slightly non-linear
-with respect to the celsius temperature. Currently a linear
-approximation is used. Therefore, the reported T15 value will deviate
-slightly from whatever input value you provide (via the `sensor_t15`
-configuration entry). The error will increase towards the extremes,
-especially below 10°C.
+representation is a bit less than 0.1°C. Also, it appears to be
+slightly non-linear with respect to the celsius
+representation. Currently a linear approximation is used. Therefore,
+the reported T15 value will deviate slightly from whatever input value
+you provide (via the `sensor_t15` configuration entry). The error will
+increase towards the extremes, especially below 10°C.
 
 ## CTS600 technical information tidbits
 
@@ -179,10 +179,10 @@ out its operation.)
 
 ### Communication breakdown?
 
-If you find that your control panel is unable to communicate with the
-ventilation unit, and you are certain the wiring is correct: The most
-likely culprit is the RS485 driver chip that sits on either end of the
-communication. The chip is an
+If you find that your (physical) control panel is unable to
+communicate with the ventilation unit, and you are certain the wiring
+is correct: The most likely culprit is the RS485 driver chip that sits
+on either end of the communication. The chip is an
 [ADM483](https://www.analog.com/media/en/technical-documentation/data-sheets/ADM383.pdf)
 8-pin SMD, which is a bit tricky but not impossible to replace for
 someone with a bit of experience with a soldering iron. I've had to
