@@ -10,9 +10,12 @@ def file_in_use (file_path):
     """ Return True if FILE_PATH is in use by the current process, as indicated by an entry in /proc/self/fd. """
     import os
     rpath = os.path.realpath (file_path)
-    for entry in os.scandir ('/proc/self/fd'):
-        if os.path.realpath (entry) == rpath:
-            return True
+    try:
+        for entry in os.scandir ('/proc/self/fd'):
+            if os.path.realpath (entry) == rpath:
+                return True
+    except FileNotFoundError:
+        pass
     return False
 
 def list_serial_devices (by_id="/dev/serial/by-id"):
@@ -25,10 +28,13 @@ def list_serial_devices (by_id="/dev/serial/by-id"):
     """
     import serial.tools.list_ports, os
     ids = {}
-    for entry in os.scandir(by_id):
-        # Map e.g. '/dev/ttyUSB0' to '/dev/serial/by-id/usb-foo-bar-00'
-        if entry.is_symlink():
-            ids[os.path.realpath(entry.path)] = entry
+    try:
+        for entry in os.scandir(by_id):
+            # Map e.g. '/dev/ttyUSB0' to '/dev/serial/by-id/usb-foo-bar-00'
+            if entry.is_symlink():
+                ids[os.path.realpath(entry.path)] = entry
+    except FileNotFoundError:
+        pass
 
     return sorted([{'dev': ids[p.device].path,
                     'description': ids[p.device].name,
