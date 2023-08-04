@@ -160,29 +160,6 @@ def decodeSlaveID (data, format = default_slave_id_format):
         f = f[:-1] # decrease struct format if there's not enough data
     return dict (zip ([n for n,s in f], struct.unpack_from(fb(f), data)))
 
-def read_request (recv):
-    slave = word8(recv)
-    function_code = word8(recv)
-    op = NilanOperators(function_code)
-    data_size = None
-    parameters = ()
-    
-    if (op == NilanOperators.REPORT_SLAVE_ID):
-        data_size = 0
-    elif (op == NilanOperators.WI_RO_REGS):
-        parameters = (word16(recv), word16(recv))
-        data_size = word16(recv)
-    elif (op in (NilanOperators.READ_DISCRETE_INPUTS, NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS, NilanOperators.PRESET_SINGLE_REGISTER)):
-        data_size = 4
-    else:
-        raise Exception(f"Unknown request op {op}")
-
-    data = recv(data_size)
-    crc = word16b(recv)
-
-    print(f'REQ: {op} : {parameters} : {data}')
-    
-    return op.name, parameters, data, crc
 
 def read_response (rawRecv):
     """ Parse a Nilan response packet from rawRecv, which is a function
@@ -299,9 +276,6 @@ class CTS600:
 
         """
         (reqOP, *args) = request if isinstance(request, tuple) else (request,)
-        # time.sleep (0.05)
-        # while self.client.recv(1):
-        #     pass
         self.send(reqOP, requestFrame)
         (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
         if (not crcOK):
@@ -312,13 +286,12 @@ class CTS600:
         if handler:
             handler(ackOP, parameters, data, request=request)
         else:
-            print(f'Warning: No ack handler for op {ackOP}.')
+            self.log("Warning: No ack handler for op %s.", ackOP)
     
     def send (self, op, frame):
         """Transmit OP to SELF.UNIT and then remaining FRAME."""
         f = [self.unit, op.value] + frame
         f = appendCRC(f)
-        # self.log('SEND: %s', ['#x%02x' % x for x in f])
         return self.client.send(bytes(f))
 
     def ack_report_slave_id (self, op, parameters, data, request=None):
@@ -335,7 +308,7 @@ class CTS600:
 
     def ack_preset_single_register (self, op, parameters, data, request=None):
         if (request and (request != (NilanOperators.PRESET_SINGLE_REGISTER, *parameters))):
-            print (f'ack_preset_single_register mismatch: {request} -> {parameters}')
+            self.log ("ack_preset_single_register mismatch: %s -> %s", request, parameters)
 
     def ack_wi_ro_regs (self, op, parameters, data, request=None):
         (address, count) = parameters
@@ -552,26 +525,55 @@ class CTS600:
 
 class CTS600Mockup (CTS600):
     """ A no-op pseudo-device just for testing and debugging. """
-    data = {'thermostat': 21,
-            'mode': 'COOL',
-            'flow': 2,
-            'status': 'COOLING',
-            'T15': 23,
-            'T2': 6,
-            'T1': 16,
-            'T5': 4,
-            'T6': 39,
-            'inletFlow': 2,
-            'exhaustFlow': 2,
-            'LED': 'on'}
+    mockup_data = {'thermostat': 21,
+                   'mode': 'COOL',
+                   'flow': 2,
+                   'status': 'COOLING',
+                   'T15': 23,
+                   'T2': 6,
+                   'T1': 16,
+                   'T5': 4,
+                   'T6': 39,
+                   'inletFlow': 2,
+                   'exhaustFlow': 2,
+                   'LED': 'on'}
+    mockup_slave_id = {'slaveID': 16,
+                       'runStatus': 1,
+                       'errorStatus': 0,
+                       'resetStatus': 1,
+                       'protocolVersion': 100,
+                       'softwareVersion': 131,
+                       'softwareDate': 0,
+                       'softwareTime': 0,
+                       'product': b'6551720001',
+                       'numofOutputBits': 0,
+                       'numofLEDs': 0,
+                       'numofInputBits': 0,
+                       'numofKeys': 0,
+                       'numofOutputRegisters': 0,
+                       'numofInputRegisters': 0,
+                       'reserved': b'\x00\x00',
+                       'numofActions': 0,
+                       'displayRows': 2,
+                       'displayColumns': 8,
+                       'displayType': 1,
+                       'displayDataType': 1}
+    slave_id = None
     
     def doRequest (self, request, requestFrame=[]):
+        import time
+        time.sleep(0.1)
         pass
 
     def initialize (self):
         CTS600.initialize (self)
         for i in range (0, 0x200):
             self.output_bits[i] = 0
+        import threading, time
+        def doit ():
+            time.sleep (5)
+            self.slave_id = self.mockup_slave_id
+        threading.Thread (target=doit).start()
     
     def connect (self):
         pass
@@ -585,30 +587,14 @@ class CTS600Mockup (CTS600):
 
     def slaveID (self):
         """ Output from my VPL-15 """
-        return {'slaveID': 16,
-                'runStatus': 1,
-                'errorStatus': 0,
-                'resetStatus': 1,
-                'protocolVersion': 100,
-                'softwareVersion': 131,
-                'softwareDate': 0,
-                'softwareTime': 0,
-                'product': b'6551720001',
-                'numofOutputBits': 0,
-                'numofLEDs': 0,
-                'numofInputBits': 0,
-                'numofKeys': 0,
-                'numofOutputRegisters': 0,
-                'numofInputRegisters': 0,
-                'reserved': b'\x00\x00',
-                'numofActions': 0,
-                'displayRows': 2,
-                'displayColumns': 8,
-                'displayType': 1,
-                'displayDataType': 1}
+        return self.slave_id
 
     def updateData (self):
-        return 
+        import threading, time
+        def doit ():
+            time.sleep (5)
+            self.data = self.mockup_data
+        threading.Thread (target=doit).start()
         
 def test(port=None):
     port = port or findUSB()
