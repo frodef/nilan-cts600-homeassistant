@@ -85,7 +85,7 @@ async def async_setup_platform(
         raise PlatformNotReady
 
     hass.data[DATA_KEY][port] = device
-    async_add_entities([device], update_before_add=False)
+    async_add_entities([device], update_before_add=True)
 
 class HaCTS600 (ClimateEntity):
     """
@@ -128,18 +128,6 @@ class HaCTS600 (ClimateEntity):
         self.entity_description = ClimateEntityDescription(
             key='nilan_cts600',
             icon='mdi:hvac'
-        )
-        
-        slaveID = self.cts600.slaveID()
-        product = nilanString(slaveID['product'])
-        self._attr_device_info = DeviceInfo(
-            identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self.unique_id)
-            },
-            manufacturer="Nilan",
-            model=product,
-            sw_version=f"sw={slaveID['softwareVersion']}-protocol={slaveID['protocolVersion']}",
         )
         
         if sensor_entity_id:
@@ -288,6 +276,17 @@ class HaCTS600 (ClimateEntity):
     async def initialize (self):
         await self._call (self.cts600.initialize)
         await self._call (self.cts600.setLanguage, "ENGLISH")
+        slaveID = self.cts600.slaveID()
+        product = nilanString(slaveID['product'])
+        self._attr_device_info = DeviceInfo(
+            identifiers={
+                # Serial numbers are unique identifiers within a specific domain
+                (DOMAIN, self.unique_id)
+            },
+            manufacturer="Nilan",
+            model=product,
+            sw_version=f"sw={slaveID['softwareVersion']}-protocol={slaveID['protocolVersion']}",
+        )
         _LOGGER.debug ("SlaveID: %s", self.cts600.slaveID())
 
     def key (self, key=0):
