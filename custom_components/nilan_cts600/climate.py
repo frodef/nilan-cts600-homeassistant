@@ -285,7 +285,7 @@ class HaCTS600 (ClimateEntity):
             },
             manufacturer="Nilan",
             model=product,
-            sw_version=f"sw={slaveID['softwareVersion']}-protocol={slaveID['protocolVersion']}",
+            sw_version=f"sw={slaveID['softwareVersion']},protocol={slaveID['protocolVersion']}",
         )
         _LOGGER.debug ("SlaveID: %s", self.cts600.slaveID())
 
