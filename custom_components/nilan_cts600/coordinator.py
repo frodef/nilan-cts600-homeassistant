@@ -80,7 +80,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
             # Name of the data. For logging purposes.
             name=config.get("name", "Nilan CTS600"),
             # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=10),
+            update_interval=timedelta(seconds=15),
         )
 
         if not hass:
