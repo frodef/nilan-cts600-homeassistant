@@ -151,17 +151,17 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
     async def async_set_temperature (self, temperature=None, **kwargs):
         """Set target temperature."""
         _LOGGER.debug ('set fan_temperature %s', temperature)
-        await self.setThermostat (int(temperature))
+        await self.coordinator.setThermostat (int(temperature))
     
     async def async_set_fan_mode (self, fan_mode):
         """Set the fan mode."""
         _LOGGER.debug ('set fan_mode %s', fan_mode)
-        await self.setFlow (int(fan_mode))
+        await self.coordinator.setFlow (int(fan_mode))
 
     async def async_set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
         _LOGGER.debug ('set hvac_mode %s', hvac_mode)
-        display = await self.resetMenu()
+        display = await self.coordinator.resetMenu()
         current_mode = display.split()[0]
         if self._mode_map[current_mode] == hvac_mode:
             return
@@ -170,6 +170,6 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         else:
             if current_mode == 'OFF':
                 await self.key_on()
-            await self.setMode (self._mode_imap[hvac_mode])
+            await self.coordinator.setMode (self._mode_imap[hvac_mode])
 
     
