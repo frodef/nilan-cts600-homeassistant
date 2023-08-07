@@ -108,7 +108,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        async with async_timeout.timeout(5):
+        async with async_timeout.timeout(15):
             if self._t15_fallback:
                 await self.setT15 (self._t15_fallback)
                 self._t15_fallback = None
