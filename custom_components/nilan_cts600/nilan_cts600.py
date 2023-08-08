@@ -19,6 +19,20 @@ class NilanOperators(Enum):
     WI_RO_BITS = 65
     WI_RO_REGS = 66
 
+class Key (Enum):
+    """ A bitmap representing the console buttons. """
+    ESC = 0x01
+    UP = 0x02
+    DOWN = 0x04
+    ENTER = 0x08
+    OFF = 0x10
+    ON = 0x20
+
+    def __int__ (self):
+        return self.value
+    def __add__(self, other):
+        return self.value | int(other)
+    
 def word8 (recv, index=None):
     if index is not None:
         return recv[index]
@@ -57,6 +71,9 @@ def parseFlow (string):
     """ Assuming STRING contains a number 1-4 delimited like >num<, return that number."""
     flowText = re.findall ('>([1-4])<', string)
     return int (flowText[0], 10) if flowText else None
+
+def parseMode (string):
+    return string.split (None, 2)[1]
 
 def findUSB (dev='/dev/'):
     for ttyusb in filter(lambda x: re.search('^ttyUSB[0-9]*', x), os.listdir(dev)):
@@ -229,8 +246,7 @@ class CTS600:
         self.rows = rows
         self.columns = columns
         self.data = {}
-        self.dataText = {}
-        self._data_trace = []
+        self.metaData = {}
         self._t15_adtemp = None
 
     def log (self, fmt, *args):
@@ -334,33 +350,34 @@ class CTS600:
         generic request for state update from CTS600.
 
         """
-        self.wi_ro_regs (0x100, key)
-        if key != 0:
-            self.wi_ro_regs (0x100, key)
+        keycode = int (key) if key else 0
+        self.wi_ro_regs (0x100, keycode)
+        if keycode != 0:
+            self.wi_ro_regs (0x100, keycode)
             self.wi_ro_regs (0x100, 0)
         return self.display()
 
     def key_esc (self):
-        return self.key (0x01)
+        return self.key (Key.ESC)
     
     def key_up (self, repeat=1):
         for _ in range (repeat-1):
-            self.key (0x02)
-        return self.key(0x02)
+            self.key (Key.UP)
+        return self.key(Key.UP)
 
     def key_down (self, repeat=1):
         for _ in range(repeat-1):
-            self.key (0x04)
-        return self.key(0x04)
+            self.key (Key.DOWN)
+        return self.key(Key.DOWN)
 
     def key_enter (self):
-        return self.key (0x08)
+        return self.key (Key.ENTER)
 
     def key_off (self):
-        return self.key (0x10)
+        return self.key (Key.OFF)
 
     def key_on (self):
-        return self.key (0x20)
+        return self.key (Key.ON)
 
     def resetMenu (self, maxTries=10):
         """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
@@ -382,52 +399,142 @@ class CTS600:
             startBlink=startBlink,
             endBlink=endBlink)
     
-    def display (self):
-        return " ".join ([self.displayRow (r).strip() for r in range (0, self.rows)])
+    def display (self, newline='/'):
+        return newline.join ([self.displayRow (r).strip() for r in range (0, self.rows)])
 
     def led (self):
         return {0: 'off', 1: 'on', 2: 'unknown', 3: 'blink'}[self.output_bits[0x100] & 0x03]
 
-    def updateData (self, updateShowData=True):
+    def xxx_scanMenu (self, menu_spec):
+        """Cycle through the CTS600 menu and record the relevant
+        values, according to the structure specified in MENU_SPEC.
+
+        """
+        values = dict() # Record fresh data values here.
+        trace = [] # Record the menu displays we cycle through.
+        valuesText = dict() # Record the display texts each data value is based on here.
+        for menu_step in menu_spec:
+            if isinstance (menu_step, tuple):
+                (action, variable, parser) = menu_step
+                txt = self.key(action) if isinstance (action, Key) else action()
+                trace.append (txt)
+                if variable:
+                    valuesText[variable] = txt
+                    values[variable] = parser(txt)
+            else:
+                trace.append (self.key(menu_step) if isinstance (menu_step, Key) else menu_step())
+        return values
+
+    def scanMenuSequence (self, menu_spec):
+        """Cycle through the CTS600 menu and record the relevant
+        values, according to the structure specified in MENU_SPEC.
+
+        """
+        values = dict() # Record fresh data values here.
+        metaData = dict()
+        for entry in menu_spec:
+            if isinstance (entry, list):
+                sub_values, sub_metaData = self.scanMenuParallell (entry[1:], entry[0])
+                values.update (sub_values)
+                metaData.update (sub_metaData)
+            elif isinstance (entry, tuple):
+                (e_regexp, e_var, e_parse, e_kind, e_gonext, e_godisplay) = entry
+                display = e_godisplay() if e_godisplay else self.display()
+                if e_regexp:
+                    if not (match := re.match (e_regexp, display)):
+                        print (f"mismatch: '{e_regexp}', '{display}'")
+                        break # Stop sequence at first mismatch
+                    else:
+                        m = match.groupdict()
+                        variable_key = "_".join(m['var'].replace("/", " ").split()) if 'var' in m else e_var
+                        if variable_key and 'value' in m:
+                            values[variable_key] = e_parse (m['value']) if e_parse else m['value']
+                            metaData[variable_key] = dict()
+                            if 'description' in m:
+                                metaData[variable_key]['description'] = m['description']
+                            if e_kind:
+                                metaData[variable_key]['kind'] = e_kind
+                        if e_gonext:
+                            e_gonext()
+        return values, metaData
+
+    def scanMenuParallell (self, menu_spec, gonext):
+        """Cycle through the CTS600 menu and record the relevant
+        values, according to the structure specified in MENU_SPEC.
+
+        """
+        values = dict() # Record fresh data values here.
+        metaData = dict()
+        previous_display = None
+        display = self.display()
+        stopped = False
+        while not display == previous_display:
+            # Search for the first entry that matches display, and execute entry
+            # print (f"display: '{display}'")
+            next_gonext = gonext
+            for (e_regexp, e_var, e_parse, e_kind, e_gonext, e_godisplay) in menu_spec:
+                if not e_regexp:
+                    raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec)
+                if match := re.match (e_regexp, display):
+                    m = match.groupdict()
+                    variable_key = "_".join(m['var'].replace("/", " ").split()) if 'var' in m else e_var
+                    next_gonext = e_gonext or gonext
+                    if variable_key and 'value' in m:
+                        values[variable_key] = e_parse (m['value']) if e_parse else m['value']
+                        metaData[variable_key] = dict()
+                        if 'description' in m:
+                            metaData[variable_key]['description'] = m['description']
+                        if e_kind:
+                            metaData[variable_key]['kind'] = e_kind
+                    break
+            else:
+                break
+            previous_display = display
+            display = next_gonext()
+        return values, metaData
+        
+    def scanMenuArgs (self, regexp=None, var=None, parse=None, gonext=None, display=None, kind=None):
+        return (regexp, var, parse, kind, gonext, display)
+    
+    def updateData (self, updateShowData=True, updateAllData=False):
         """ Cycle through the "SHOW DATA" menu and record the relevant values.
         """
-        newData = dict() # Record fresh data values here.
-        newTrace = [] # Record the menu displays we cycle through.
-        newDataText = dict() # Record the display texts each data value is based on here.
-
-        def go (x, prop=None):
-            """Assuming X is the current display string, append X to
-            TRACE and if PROP is given then insert X into newDataText
-            too. Return X."""
-            if prop:
-                newDataText[prop] = x
-            newTrace.append(x)
-            return x
-
-        # First record the three values from the top-level menu display:
-        newData['thermostat'] = parseCelsius(go(self.resetMenu(), 'thermostat'))
-        newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
-        newData['flow'] = parseFlow (go (self.display(), 'flow'))
+        f = self.scanMenuArgs
+        scan_menu = [
+            f (display=self.resetMenu, regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', ' ')),
+            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
+            f (regexp="^(?P<value>\w+)", var='mode'),
+            f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
+        ]
         if updateShowData:
-            # Now enter the SHOW DATA menu and record the various data entries:
-            go (self.key_up())
-            newData['status'] = go(self.key_enter(), 'status').split(None, 2)[1]
-            newData['T15'] = parseCelsius (go(self.key_down(), 'T15'))
-            if not self._t15_adtemp:
-                self._t15_adtemp = nilanCelsiusToAD (newData['T15'])
-            newData['T2'] = parseCelsius (go(self.key_down(), 'T2'))
-            newData['T1'] = parseCelsius (go(self.key_down(), 'T1'))
-            newData['T5'] = parseCelsius (go(self.key_down(), 'T5'))
-            newData['T6'] = parseCelsius (go(self.key_down(), 'T6'))
-            newData['inletFlow'] = parseLastNumber (go(self.key_down(), 'inletFlow'))
-            newData['exhaustFlow'] = parseLastNumber (go(self.key_down(), 'exhaustFlow'))
-        # Record the state of the status LED
+            show_data = [
+                f (display=self.key_up, regexp="SHOW/DATA", gonext=self.key_enter),
+                [ self.key_down,
+                  f (regexp="STATUS/(?P<value>.*)", var='status'),
+                  # Match any temperature sensor like T5:
+                  f (regexp="(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
+                  # Match any flow value:
+                  f (regexp="(?P<var>.*/FLOW)\s+(?P<value>\d+)", parse=int, kind='flow'),
+                 ],
+            ]
+            if updateAllData:
+                show_data[1] += [
+                    # Match any software version:
+                    f (regexp="(?P<var>SOFTWARE.*/\w*)\s*(?P<value>\S+)\s*"),
+                    # Finally, match any variable/value on separate lines:
+                    f (regexp="(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
+                ]
+            scan_menu += show_data
+        scanData, scanMetaData = self.scanMenuSequence (scan_menu)
+        newData = self.data.copy()
+        newMetaData = self.metaData.copy()
+        newData.update (scanData)
+        newMetaData.update (scanMetaData)
         newData['LED'] = self.led()
         self.data = newData
-        self.dataText = newDataText
-        self._data_trace = newTrace
-        return newData
-
+        self.metaData = newMetaData
+        return self.data
+    
     def setThermostat (self, celsius):
         """ Set thermostat to CELSIUS degrees. """
         def getBlinkText (string):
@@ -597,6 +704,7 @@ class CTS600Mockup (CTS600):
         
 def test(port=None):
     port = port or findUSB()
+    print (f"port: {port}")
     client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
     cts600 = CTS600(client=client)
     cts600.connect()
@@ -606,3 +714,7 @@ def test(port=None):
     cts600.key ()
     return cts600
 
+def t2 (x):
+    a,b,*c = x
+    print (f"a: {a}, b: {b}, c: {c}")
+    return a,b,c
