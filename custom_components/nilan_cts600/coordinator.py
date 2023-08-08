@@ -80,7 +80,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
             # Name of the data. For logging purposes.
             name=config.get("name", "Nilan CTS600"),
             # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=15),
+            update_interval=timedelta(seconds=5),
         )
 
         if not hass:
@@ -92,7 +92,8 @@ class CTS600Coordinator(DataUpdateCoordinator):
         self.cts600 = cts600
         self._lock = asyncio.Lock()
         self._t15_fallback = None
-
+        self._updateDataCounter = 100
+        
         if sensor_entity_id:
             sensor_state = hass.states.get(sensor_entity_id)
             if sensor_state:
@@ -112,7 +113,12 @@ class CTS600Coordinator(DataUpdateCoordinator):
             if self._t15_fallback:
                 await self.setT15 (self._t15_fallback)
                 self._t15_fallback = None
-            return await self.updateData()
+            updateShowData = False
+            self._updateDataCounter += 1
+            if self._updateDataCounter >= 10:
+                updateShowData = True
+                self._updateDataCounter = 0
+            return await self.updateData(updateShowData=updateShowData)
 
     async def _update_T15_state (self, entity_id, old_state, new_state):
         """ Update thermostat with latest (room) temperature from sensor."""
@@ -170,8 +176,8 @@ class CTS600Coordinator(DataUpdateCoordinator):
     def key_off (self):
         return self._call (self.cts600.key_off)
     
-    def updateData (self):
-        return self._call (self.cts600.updateData)
+    def updateData (self, updateShowData=True):
+        return self._call (self.cts600.updateData, updateShowData)
 
     def setT15 (self, celcius):
         return self._call (self.cts600.setT15, celcius)
@@ -187,11 +193,3 @@ class CTS600Coordinator(DataUpdateCoordinator):
 
     def setMode (self, mode):
         return self._call (self.cts600.setMode, mode)
-
-    # async def async_update (self):
-    #     if self._t15_fallback:
-    #         await self.setT15 (self._t15_fallback)
-    #         self._t15_fallback = None
-    #     state = await self.updateData ()
-    #     return state
-

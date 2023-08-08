@@ -388,7 +388,7 @@ class CTS600:
     def led (self):
         return {0: 'off', 1: 'on', 2: 'unknown', 3: 'blink'}[self.output_bits[0x100] & 0x03]
 
-    def updateData (self):
+    def updateData (self, updateShowData=True):
         """ Cycle through the "SHOW DATA" menu and record the relevant values.
         """
         newData = dict() # Record fresh data values here.
@@ -408,18 +408,19 @@ class CTS600:
         newData['thermostat'] = parseCelsius(go(self.resetMenu(), 'thermostat'))
         newData['mode'] = go (self.display(), 'mode').split (None, 2)[0]
         newData['flow'] = parseFlow (go (self.display(), 'flow'))
-        # Now enter the DISPLAY DATA menu and record the various data entries:
-        go (self.key_up())
-        newData['status'] = go(self.key_enter(), 'status').split(None, 2)[1]
-        newData['T15'] = parseCelsius (go(self.key_down(), 'T15'))
-        if not self._t15_adtemp:
-            self._t15_adtemp = nilanCelsiusToAD (newData['T15'])
-        newData['T2'] = parseCelsius (go(self.key_down(), 'T2'))
-        newData['T1'] = parseCelsius (go(self.key_down(), 'T1'))
-        newData['T5'] = parseCelsius (go(self.key_down(), 'T5'))
-        newData['T6'] = parseCelsius (go(self.key_down(), 'T6'))
-        newData['inletFlow'] = parseLastNumber (go(self.key_down(), 'inletFlow'))
-        newData['exhaustFlow'] = parseLastNumber (go(self.key_down(), 'exhaustFlow'))
+        if updateShowData:
+            # Now enter the SHOW DATA menu and record the various data entries:
+            go (self.key_up())
+            newData['status'] = go(self.key_enter(), 'status').split(None, 2)[1]
+            newData['T15'] = parseCelsius (go(self.key_down(), 'T15'))
+            if not self._t15_adtemp:
+                self._t15_adtemp = nilanCelsiusToAD (newData['T15'])
+            newData['T2'] = parseCelsius (go(self.key_down(), 'T2'))
+            newData['T1'] = parseCelsius (go(self.key_down(), 'T1'))
+            newData['T5'] = parseCelsius (go(self.key_down(), 'T5'))
+            newData['T6'] = parseCelsius (go(self.key_down(), 'T6'))
+            newData['inletFlow'] = parseLastNumber (go(self.key_down(), 'inletFlow'))
+            newData['exhaustFlow'] = parseLastNumber (go(self.key_down(), 'exhaustFlow'))
         # Record the state of the status LED
         newData['LED'] = self.led()
         self.data = newData
@@ -587,10 +588,10 @@ class CTS600Mockup (CTS600):
         """ Output from my VPL-15 """
         return self.slave_id
 
-    def updateData (self):
+    def updateData (self, updateDisplayData):
         import threading, time
         def doit ():
-            time.sleep (5)
+            time.sleep (2 if updateDisplayData else 6)
             self.data = self.mockup_data
         threading.Thread (target=doit).start()
         
