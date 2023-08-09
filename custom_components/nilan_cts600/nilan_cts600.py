@@ -403,7 +403,10 @@ class CTS600:
         return newline.join ([self.displayRow (r).strip() for r in range (0, self.rows)])
 
     def led (self):
-        return {0: 'off', 1: 'on', 2: 'unknown', 3: 'blink'}[self.output_bits[0x100] & 0x03]
+        if 0x100 in self.output_bits:
+            return ['off', 'on', 'unknown', 'blink'][self.output_bits[0x100] & 0x03]
+        else:
+            return 'unknown'
 
     def xxx_scanMenu (self, menu_spec):
         """Cycle through the CTS600 menu and record the relevant
@@ -437,25 +440,31 @@ class CTS600:
                 sub_values, sub_metaData = self.scanMenuParallell (entry[1:], entry[0])
                 values.update (sub_values)
                 metaData.update (sub_metaData)
-            elif isinstance (entry, tuple):
-                (e_regexp, e_var, e_parse, e_kind, e_gonext, e_godisplay) = entry
-                display = e_godisplay() if e_godisplay else self.display()
-                if e_regexp:
-                    if not (match := re.match (e_regexp, display)):
-                        print (f"mismatch: '{e_regexp}', '{display}'")
+            elif isinstance (entry, dict):
+                e = entry
+                display = e['display']() if 'display' in e else self.display()
+                # print (f"scan: {e}, disp {display}")
+                if 'regexp' in e:
+                    if not (match := re.match (e['regexp'], display)):
+                        print (f"mismatch: '{e['regexp']}', '{display}'")
                         break # Stop sequence at first mismatch
                     else:
                         m = match.groupdict()
-                        variable_key = "_".join(m['var'].replace("/", " ").split()) if 'var' in m else e_var
+                        if 'var' in m:
+                            variable_key = "_".join(m['var'].replace("/", " ").split())
+                        elif 'var' in e:
+                            variable_key = e['var']
+                        else:
+                            variable_key = None
                         if variable_key and 'value' in m:
-                            values[variable_key] = e_parse (m['value']) if e_parse else m['value']
+                            values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
                             metaData[variable_key] = dict()
                             if 'description' in m:
                                 metaData[variable_key]['description'] = m['description']
-                            if e_kind:
-                                metaData[variable_key]['kind'] = e_kind
-                        if e_gonext:
-                            e_gonext()
+                            if 'kind' in e:
+                                metaData[variable_key]['kind'] = e['kind']
+                        if 'gonext' in e:
+                            e['gonext']()
         return values, metaData
 
     def scanMenuParallell (self, menu_spec, gonext):
@@ -468,38 +477,43 @@ class CTS600:
         previous_display = None
         display = self.display()
         stopped = False
-        while not display == previous_display:
+        while not (stopped or display == previous_display):
             # Search for the first entry that matches display, and execute entry
             # print (f"display: '{display}'")
             next_gonext = gonext
-            for (e_regexp, e_var, e_parse, e_kind, e_gonext, e_godisplay) in menu_spec:
-                if not e_regexp:
+            for e in menu_spec:
+                if not 'regexp' in e:
                     raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec)
-                if match := re.match (e_regexp, display):
+                if match := re.match (e['regexp'], display):
                     m = match.groupdict()
-                    variable_key = "_".join(m['var'].replace("/", " ").split()) if 'var' in m else e_var
-                    next_gonext = e_gonext or gonext
+                    if 'var' in m:
+                        variable_key = "_".join(m['var'].replace("/", " ").split())
+                    elif 'var' in e:
+                        variable_key = e['var']
+                    else:
+                        variable_key = None
+                    next_gonext = e.get ('gonext', gonext)
                     if variable_key and 'value' in m:
-                        values[variable_key] = e_parse (m['value']) if e_parse else m['value']
+                        values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
                         metaData[variable_key] = dict()
                         if 'description' in m:
                             metaData[variable_key]['description'] = m['description']
-                        if e_kind:
-                            metaData[variable_key]['kind'] = e_kind
+                        if 'kind' in e:
+                            metaData[variable_key]['kind'] = e['kind']
+                    if e.get ('stop', False):
+                        stopped = True
                     break
             else:
                 break
-            previous_display = display
-            display = next_gonext()
+            if not stopped:
+                previous_display = display
+                display = next_gonext()
         return values, metaData
         
-    def scanMenuArgs (self, regexp=None, var=None, parse=None, gonext=None, display=None, kind=None):
-        return (regexp, var, parse, kind, gonext, display)
-    
-    def updateData (self, updateShowData=True, updateAllData=False):
-        """ Cycle through the "SHOW DATA" menu and record the relevant values.
+    def scanData (self, updateShowData=True, updateAllData=False):
+        """ Scan the main display and "SHOW DATA" menu and record the relevant operating parameters.
         """
-        f = self.scanMenuArgs
+        f = dict
         scan_menu = [
             f (display=self.resetMenu, regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', ' ')),
             f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
@@ -534,6 +548,22 @@ class CTS600:
         self.data = newData
         self.metaData = newMetaData
         return self.data
+
+    def updateData (self, updateDisplayData):
+        return self.scanData (updateShowData = updateDisplayData)
+        
+    def scanCooling (self):
+        """ Scan the COOLING menu """
+        def intOrOff (x):
+            return int(x) if x != 'OFF' else None
+                
+        f = dict
+        return self.scanMenuSequence ([
+            f (display=self.resetMenu),
+            [ self.key_down, f (regexp="COOLING", stop=True), f (regexp='.*') ],
+            f (display=self.key_enter, regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
+            f (display=self.key_down, regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
+        ])
     
     def setThermostat (self, celsius):
         """ Set thermostat to CELSIUS degrees. """
