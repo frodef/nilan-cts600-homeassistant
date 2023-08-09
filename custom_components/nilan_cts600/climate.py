@@ -120,7 +120,6 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         if led == 'on':
             cts600action = self.cts600.data.get ('status')
             action = self._action_map.get(cts600action, None) if cts600action else None
-            _LOGGER.debug ('hvac action %s -> %s', cts600action, action)
             return action
         elif led == 'off':
             return HVACAction.IDLE
