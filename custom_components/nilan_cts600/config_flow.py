@@ -1,6 +1,6 @@
 import logging
 import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlow
 from homeassistant.helpers.selector import selector
 from .const import DOMAIN
 
@@ -47,7 +47,7 @@ def list_serial_devices (by_id="/dev/serial/by-id"):
                    ],
                   key=lambda x: (2 if file_in_use(x['dev']) else 0) + (1 if not x['id'] else 0))
 
-class CTS600ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
     """Example config flow."""
     # The schema version of the entries that it creates
     # Home Assistant will call your migrate method if the version changes
