@@ -409,86 +409,69 @@ class CTS600:
         else:
             return 'unknown'
 
-    def scanMenuSequence (self, menu_spec):
+    def scanMenu (self, menu_spec):
         """Cycle through the CTS600 menu and record the relevant
         values, according to the structure specified in MENU_SPEC.
 
         """
         values = dict() # Record fresh data values here.
         metaData = dict()
-        for entry in menu_spec:
-            if isinstance (entry, list):
-                sub_values, sub_metaData = self.scanMenuParallell (entry[1:], entry[0])
-                values.update (sub_values)
-                metaData.update (sub_metaData)
-            elif isinstance (entry, dict):
-                e = entry
-                display = e['display']() if 'display' in e else self.display()
-                # print (f"scan: {e}, disp {display}")
-                if 'regexp' in e:
-                    if not (match := re.match (e['regexp'], display)):
-                        print (f"mismatch: '{e['regexp']}', '{display}'")
-                        break # Stop sequence at first mismatch
-                    else:
-                        m = match.groupdict()
-                        if 'var' in m:
-                            variable_key = "_".join(m['var'].replace("/", " ").split())
-                        elif 'var' in e:
-                            variable_key = e['var']
-                        else:
-                            variable_key = None
-                        if variable_key and 'value' in m:
-                            values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
-                            metaData[variable_key] = dict()
-                            if 'description' in m:
-                                metaData[variable_key]['description'] = m['description']
-                            if 'kind' in e:
-                                metaData[variable_key]['kind'] = e['kind']
-                        if 'gonext' in e:
-                            e['gonext']()
-        return values, metaData
 
-    def scanMenuParallell (self, menu_spec, gonext):
-        """Cycle through the CTS600 menu and record the relevant
-        values, according to the structure specified in MENU_SPEC.
-
-        """
-        values = dict() # Record fresh data values here.
-        metaData = dict()
-        previous_display = None
-        display = self.display()
-        stopped = False
-        while not (stopped or display == previous_display):
-            # Search for the first entry that matches display, and execute entry
-            # print (f"display: '{display}'")
-            next_gonext = gonext
-            for e in menu_spec:
-                if not 'regexp' in e:
-                    raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec)
-                if match := re.match (e['regexp'], display):
-                    m = match.groupdict()
-                    if 'var' in m:
-                        variable_key = "_".join(m['var'].replace("/", " ").split())
-                    elif 'var' in e:
-                        variable_key = e['var']
-                    else:
-                        variable_key = None
-                    next_gonext = e.get ('gonext', gonext)
-                    if variable_key and 'value' in m:
-                        values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
-                        metaData[variable_key] = dict()
-                        if 'description' in m:
-                            metaData[variable_key]['description'] = m['description']
-                        if 'kind' in e:
-                            metaData[variable_key]['kind'] = e['kind']
-                    if e.get ('stop', False):
-                        stopped = True
-                    break
+        def record_matching_entry (m, e):
+            """ Local utility, record regexp match M for entry E. """
+            if 'var' in m:
+                variable_key = "_".join(m['var'].replace("/", " ").split())
+            elif 'var' in e:
+                variable_key = e['var']
             else:
-                break
-            if not stopped:
-                previous_display = display
-                display = next_gonext()
+                return
+            if variable_key and 'value' in m:
+                values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
+                metaData[variable_key] = dict()
+                if 'description' in m:
+                    metaData[variable_key]['description'] = m['description']
+                if 'kind' in e:
+                    metaData[variable_key]['kind'] = e['kind']
+            
+        def scanSequence (menu_spec_sequence):
+            for entry in menu_spec_sequence:
+                if isinstance (entry, list):
+                    scanParallell (entry[1:], entry[0])
+                elif isinstance (entry, dict):
+                    e = entry
+                    display = e['display']() if 'display' in e else self.display()
+                    # print (f"scan: {e}, disp {display}")
+                    if 'regexp' in e:
+                        if not (match := re.match (e['regexp'], display)):
+                            print (f"mismatch: '{e['regexp']}', '{display}'")
+                            break # Stop sequence at first mismatch
+                        else:
+                            record_matching_entry (match.groupdict(), e)
+                            if 'gonext' in e:
+                                e['gonext']()
+ 
+        def scanParallell (menu_spec_parallell, gonext):
+            previous_display = None
+            display = self.display()
+            stopped = False
+            while not (stopped or display == previous_display):
+                # Search for the first entry that matches display, and execute entry
+                next_gonext = gonext
+                for e in menu_spec_parallell:
+                    if not 'regexp' in e:
+                        raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec_parallell)
+                    if match := re.match (e['regexp'], display):
+                        next_gonext = e.get ('gonext', gonext)
+                        record_matching_entry (match.groupdict(), e)
+                        if e.get ('stop', False):
+                            stopped = True
+                        break
+                else:
+                    break
+                if not stopped:
+                    previous_display = display
+                    display = next_gonext()
+        scanSequence (menu_spec)
         return values, metaData
 
     def updateDisplay (self):
@@ -524,7 +507,7 @@ class CTS600:
                     f (regexp="(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
                 ]
             scan_menu += show_data
-        scanData, scanMetaData = self.scanMenuSequence (scan_menu)
+        scanData, scanMetaData = self.scanMenu (scan_menu)
         newData = self.data.copy()
         newMetaData = self.metaData.copy()
         newData.update (scanData)
@@ -543,7 +526,7 @@ class CTS600:
             return int(x) if x != 'OFF' else None
                 
         f = dict
-        return self.scanMenuSequence ([
+        return self.scanMenu ([
             f (display=self.resetMenu),
             [ self.key_down, f (regexp="COOLING", stop=True), f (regexp='.*') ],
             f (display=self.key_enter, regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
