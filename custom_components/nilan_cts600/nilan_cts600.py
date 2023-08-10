@@ -483,7 +483,7 @@ class CTS600:
                             scanSequence (e['then'])
                         break
                 else:
-                    print (f'Parallell no match for {display}')
+                    # print (f'Parallell no match for {display}')
                     break
                 if not stopped:
                     previous_display = display
