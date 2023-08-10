@@ -633,6 +633,16 @@ class CTS600:
         """ Get the previously set T15 room sensor temperature, in celsius. """
         return nilanADToCelsius (self._t15_adtemp) if self._t15_adtemp else None
 
+    def enable_service_menu (self):
+        """ Enable the CTS600 service menu by pressing down and enter for 10 seconds. """
+        import time
+        self.wi_ro_regs (0x100, int (Key.DOWN + Key.ENTER))
+        self.wi_ro_regs (0x100, int (Key.DOWN + Key.ENTER))
+        time.sleep (10)
+        self.wi_ro_regs (0x100, int (Key.NONE))
+        return self.display()
+        
+    
 class CTS600Mockup (CTS600):
     """ A no-op pseudo-device just for testing and debugging. """
     mockup_data = {'thermostat': 21,
@@ -703,7 +713,7 @@ class CTS600Mockup (CTS600):
             time.sleep (2 if updateDisplayData else 6)
             self.data = self.mockup_data
         threading.Thread (target=doit).start()
-        
+
 def test(port=None):
     port = port or findUSB()
     print (f"port: {port}")
