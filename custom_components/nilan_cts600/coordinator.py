@@ -1,4 +1,4 @@
-import logging, os, asyncio, async_timeout
+import logging, os, asyncio, async_timeout, time
 from datetime import timedelta
 
 from homeassistant.helpers.update_coordinator import (
@@ -20,7 +20,7 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from homeassistant.exceptions import PlatformNotReady
 
 from .const import DOMAIN, DATA_KEY
-from .nilan_cts600 import CTS600, NilanCTS600ProtocolError, nilanString, findUSB
+from .nilan_cts600 import CTS600, Key, NilanCTS600ProtocolError, nilanString, findUSB
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +52,6 @@ async def getCoordinator (hass, config):
         _LOGGER.debug ("Created new coordinator done for %s.", port)
         return coordinator
 
-
 class CTS600Coordinator(DataUpdateCoordinator):
     """Coordinated access to the CTS600.
 
@@ -80,7 +79,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
             # Name of the data. For logging purposes.
             name=config.get("name", "Nilan CTS600"),
             # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=5),
+            update_interval=timedelta(seconds=20),
         )
 
         if not hass:
@@ -93,6 +92,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         self._lock = asyncio.Lock()
         self._t15_fallback = None
         self._updateDataCounter = 100
+        self._manual_activity_ts = 0
         
         if sensor_entity_id:
             sensor_state = hass.states.get(sensor_entity_id)
@@ -102,23 +102,33 @@ class CTS600Coordinator(DataUpdateCoordinator):
         else:
             self._t15_fallback = 21
 
+    def register_manual_activity (self):
+        self._manual_activity_ts = time.time_ns()//1000_000_000
 
+    def manual_mode (self):
+        return 30 > (time.time_ns()//1000_000_000 - self._manual_activity_ts)
+        
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        async with async_timeout.timeout(15):
-            if self._t15_fallback:
-                await self.setT15 (self._t15_fallback)
-                self._t15_fallback = None
-            updateShowData = False
-            self._updateDataCounter += 1
-            if self._updateDataCounter >= 10:
-                updateShowData = True
-                self._updateDataCounter = 0
-            return await self.updateData(updateShowData=updateShowData)
+        if self.manual_mode ():
+            # Do nothing, just update display
+            await self.key (Key.NONE)
+            self.cts600.updateDisplay()
+        else:
+            async with async_timeout.timeout(15):
+                if self._t15_fallback:
+                    await self.setT15 (self._t15_fallback)
+                    self._t15_fallback = None
+                updateShowData = False
+                self._updateDataCounter += 1
+                if self._updateDataCounter >= 10:
+                    updateShowData = True
+                    self._updateDataCounter = 0
+                return await self.updateData(updateShowData=updateShowData)
 
     async def _update_T15_state (self, entity_id, old_state, new_state):
         """ Update thermostat with latest (room) temperature from sensor."""
@@ -167,7 +177,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         )
         _LOGGER.debug ("SlaveID: %s", self.cts600.slaveID())
 
-    def key (self, key=0):
+    def key (self, key=Key.NONE):
         return self._call (self.cts600.key, key)
 
     def key_on (self):
