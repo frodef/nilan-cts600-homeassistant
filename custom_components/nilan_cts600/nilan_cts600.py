@@ -21,6 +21,7 @@ class NilanOperators(Enum):
 
 class Key (Enum):
     """ A bitmap representing the console buttons. """
+    NONE = 0x00
     ESC = 0x01
     UP = 0x02
     DOWN = 0x04
@@ -343,7 +344,7 @@ class CTS600:
         self.read_holding_registers (0x102, 1)
         self.preset_single_register (0x104, self.remote_version)
         
-    def key (self, key=0):
+    def key (self, key=Key.NONE):
         """Transmit a keypress message to CTS600. KEY is a bitmap of
         the keys pressed. CTS600 will respond with more or less random
         register updates, and a zero KEY bitmap is effectively a
@@ -407,26 +408,6 @@ class CTS600:
             return ['off', 'on', 'unknown', 'blink'][self.output_bits[0x100] & 0x03]
         else:
             return 'unknown'
-
-    def xxx_scanMenu (self, menu_spec):
-        """Cycle through the CTS600 menu and record the relevant
-        values, according to the structure specified in MENU_SPEC.
-
-        """
-        values = dict() # Record fresh data values here.
-        trace = [] # Record the menu displays we cycle through.
-        valuesText = dict() # Record the display texts each data value is based on here.
-        for menu_step in menu_spec:
-            if isinstance (menu_step, tuple):
-                (action, variable, parser) = menu_step
-                txt = self.key(action) if isinstance (action, Key) else action()
-                trace.append (txt)
-                if variable:
-                    valuesText[variable] = txt
-                    values[variable] = parser(txt)
-            else:
-                trace.append (self.key(menu_step) if isinstance (menu_step, Key) else menu_step())
-        return values
 
     def scanMenuSequence (self, menu_spec):
         """Cycle through the CTS600 menu and record the relevant
@@ -509,13 +490,17 @@ class CTS600:
                 previous_display = display
                 display = next_gonext()
         return values, metaData
+
+    def updateDisplay (self):
+        self.data['display'] = self.display(newline='\n')
+        self.data['led'] = self.led()
         
     def scanData (self, updateShowData=True, updateAllData=False):
         """ Scan the main display and "SHOW DATA" menu and record the relevant operating parameters.
         """
         f = dict
         scan_menu = [
-            f (display=self.resetMenu, regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', ' ')),
+            f (display=self.resetMenu, regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
             f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
             f (regexp="^(?P<value>\w+)", var='mode'),
             f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
