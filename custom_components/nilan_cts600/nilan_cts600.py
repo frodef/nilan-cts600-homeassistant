@@ -469,7 +469,7 @@ class CTS600:
             stopped = False
             while not (stopped or display == previous_display):
                 # Search for the first entry that matches display, and execute entry
-                print (f"psearch: {display}")
+                # print (f"psearch: {display}")
                 next_gonext = gonext
                 for e in menu_spec_parallell:
                     if not 'regexp' in e:
