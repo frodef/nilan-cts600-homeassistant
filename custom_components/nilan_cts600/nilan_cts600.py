@@ -222,6 +222,7 @@ def read_response (rawRecv):
     # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
     return op.name, parameters, data, gotCRC == computedCRC
 
+_scanner_reset = [Key.ESC, {'regexp': '.*'}]
 
 class CTS600:
     _ack_handlers = {
@@ -380,10 +381,6 @@ class CTS600:
     def key_on (self):
         return self.key (Key.ON)
 
-    def resetMenu (self, maxTries=10):
-        """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
-        return cycleToMenuEnd (None, lambda: self.key_esc())
-
     def displayRow (self, row, startBlink='{', endBlink='}'):
         """Construct a string representation of the CTS600 display's
         row number ROW.  Any text that should be blinking is put
@@ -409,13 +406,18 @@ class CTS600:
         else:
             return 'unknown'
 
-    def scanMenu (self, menu_spec):
+    def resetMenu (self, maxTries=10):
+        """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
+        self.scanMenu ([_scanner_reset])
+        return self.display()
+
+    def scanMenu (self, menu_spec, data=None, meta_data=None):
         """Cycle through the CTS600 menu and record the relevant
         values, according to the structure specified in MENU_SPEC.
 
         """
-        values = dict() # Record fresh data values here.
-        metaData = dict()
+        data = data or dict()
+        metaData = meta_data or dict()
 
         def record_matching_entry (m, e):
             """ Local utility, record regexp match M for entry E. """
@@ -426,36 +428,41 @@ class CTS600:
             else:
                 return
             if variable_key and 'value' in m:
-                values[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
+                data[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
                 metaData[variable_key] = dict()
                 if 'description' in m:
                     metaData[variable_key]['description'] = m['description']
                 if 'kind' in e:
                     metaData[variable_key]['kind'] = e['kind']
-            
+
+        def run_action (action):
+            return self.key (action) if isinstance (action, Key) else action()
+                
         def scanSequence (menu_spec_sequence):
+            """ Match entries one after the next. """
             for entry in menu_spec_sequence:
                 if isinstance (entry, list):
                     scanParallell (entry[1:], entry[0])
                 elif isinstance (entry, dict):
                     e = entry
-                    display = e['display']() if 'display' in e else self.display()
+                    display = run_action(e['display']) if 'display' in e else self.display()
                     # print (f"scan: {e}, disp {display}")
                     if 'regexp' in e:
                         if not (match := re.match (e['regexp'], display)):
-                            print (f"mismatch: '{e['regexp']}', '{display}'")
                             break # Stop sequence at first mismatch
                         else:
                             record_matching_entry (match.groupdict(), e)
                             if 'gonext' in e:
-                                e['gonext']()
+                                run_action(e['gonext'])
  
         def scanParallell (menu_spec_parallell, gonext):
+            """ Match any entry until display doesn't change or matching entry says to stop. """
             previous_display = None
             display = self.display()
             stopped = False
             while not (stopped or display == previous_display):
                 # Search for the first entry that matches display, and execute entry
+                # print (f"psearch: {display}")
                 next_gonext = gonext
                 for e in menu_spec_parallell:
                     if not 'regexp' in e:
@@ -470,9 +477,9 @@ class CTS600:
                     break
                 if not stopped:
                     previous_display = display
-                    display = next_gonext()
+                    display = run_action(next_gonext)
         scanSequence (menu_spec)
-        return values, metaData
+        return data, metaData
 
     def updateDisplay (self):
         self.data['display'] = self.display(newline='\n')
@@ -483,15 +490,16 @@ class CTS600:
         """
         f = dict
         scan_menu = [
-            f (display=self.resetMenu, regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
+            _scanner_reset,
+            f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
             f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
             f (regexp="^(?P<value>\w+)", var='mode'),
             f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
         ]
         if updateShowData:
             show_data = [
-                f (display=self.key_up, regexp="SHOW/DATA", gonext=self.key_enter),
-                [ self.key_down,
+                f (display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
+                [ Key.DOWN,
                   f (regexp="STATUS/(?P<value>.*)", var='status'),
                   # Match any temperature sensor like T5:
                   f (regexp="(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
@@ -507,14 +515,10 @@ class CTS600:
                     f (regexp="(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
                 ]
             scan_menu += show_data
-        scanData, scanMetaData = self.scanMenu (scan_menu)
-        newData = self.data.copy()
-        newMetaData = self.metaData.copy()
-        newData.update (scanData)
-        newMetaData.update (scanMetaData)
-        newData['LED'] = self.led()
-        self.data = newData
-        self.metaData = newMetaData
+        scanData, scanMetaData = self.scanMenu (scan_menu, data=self.data.copy(), meta_data = self.metaData.copy())
+        scanData['LED'] = self.led()
+        self.data = scanData
+        self.metaData = scanMetaData
         return self.data
 
     def updateData (self, updateDisplayData):
@@ -527,10 +531,10 @@ class CTS600:
                 
         f = dict
         return self.scanMenu ([
-            f (display=self.resetMenu),
-            [ self.key_down, f (regexp="COOLING", stop=True), f (regexp='.*') ],
-            f (display=self.key_enter, regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
-            f (display=self.key_down, regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
+            _scanner_reset,
+            [ Key.DOWN, f (regexp="COOLING", stop=True), f (regexp='.*') ],
+            f (display=Key.ENTER, regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
+            f (display=Key.DOWN, regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
         ])
     
     def setThermostat (self, celsius):
