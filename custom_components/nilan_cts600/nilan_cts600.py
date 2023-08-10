@@ -73,9 +73,6 @@ def parseFlow (string):
     flowText = re.findall ('>([1-4])<', string)
     return int (flowText[0], 10) if flowText else None
 
-def parseMode (string):
-    return string.split (None, 2)[1]
-
 def findUSB (dev='/dev/'):
     for ttyusb in filter(lambda x: re.search('^ttyUSB[0-9]*', x), os.listdir(dev)):
         return dev + ttyusb
@@ -222,7 +219,14 @@ def read_response (rawRecv):
     # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
     return op.name, parameters, data, gotCRC == computedCRC
 
-_scanner_reset = [Key.ESC, {'regexp': '.*'}]
+def _scanner_reset_menu ():
+    """ Keep hittin ESC until nothing more happens. """
+    return [ (Key.ESC,""), {'regexp': '.*'}]
+
+def _scanner_search_menu (action, regexp):
+    """ Do action until regexp matches. """
+    return [ (action,""), dict(regexp=regexp, stop=True), dict(regexp='.*') ]
+    
 
 class CTS600:
     _ack_handlers = {
@@ -408,7 +412,7 @@ class CTS600:
 
     def resetMenu (self, maxTries=10):
         """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
-        self.scanMenu ([_scanner_reset])
+        self.scanMenu ([_scanner_reset_menu()])
         return self.display()
 
     def scanMenu (self, menu_spec, data=None, meta_data=None):
@@ -418,16 +422,18 @@ class CTS600:
         """
         data = data or dict()
         metaData = meta_data or dict()
-
-        def record_matching_entry (m, e):
+        translate_var = str.maketrans ("/", " ", "<>")
+        
+        def record_matching_entry (m, e, prefix=""):
             """ Local utility, record regexp match M for entry E. """
             if 'var' in m:
-                variable_key = "_".join(m['var'].replace("/", " ").split())
+                variable_key = "_".join(m['var'].translate(translate_var).split())
             elif 'var' in e:
                 variable_key = e['var']
             else:
                 return
             if variable_key and 'value' in m:
+                variable_key = prefix + variable_key
                 data[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
                 metaData[variable_key] = dict()
                 if 'description' in m:
@@ -440,11 +446,10 @@ class CTS600:
                 
         def scanSequence (menu_spec_sequence):
             """ Match entries one after the next. """
-            for entry in menu_spec_sequence:
-                if isinstance (entry, list):
-                    scanParallell (entry[1:], entry[0])
-                elif isinstance (entry, dict):
-                    e = entry
+            for e in menu_spec_sequence:
+                if isinstance (e, list):
+                    scanParallell (e[1:], e[0][0], e[0][1])
+                elif isinstance (e, dict):
                     display = run_action(e['display']) if 'display' in e else self.display()
                     # print (f"scan: {e}, disp {display}")
                     if 'regexp' in e:
@@ -454,26 +459,31 @@ class CTS600:
                             record_matching_entry (match.groupdict(), e)
                             if 'gonext' in e:
                                 run_action(e['gonext'])
+                else:
+                    run_action (e)
  
-        def scanParallell (menu_spec_parallell, gonext):
+        def scanParallell (menu_spec_parallell, gonext, var_prefix=""):
             """ Match any entry until display doesn't change or matching entry says to stop. """
             previous_display = None
             display = self.display()
             stopped = False
             while not (stopped or display == previous_display):
                 # Search for the first entry that matches display, and execute entry
-                # print (f"psearch: {display}")
+                print (f"psearch: {display}")
                 next_gonext = gonext
                 for e in menu_spec_parallell:
                     if not 'regexp' in e:
                         raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec_parallell)
                     if match := re.match (e['regexp'], display):
                         next_gonext = e.get ('gonext', gonext)
-                        record_matching_entry (match.groupdict(), e)
+                        record_matching_entry (match.groupdict(), e, var_prefix)
                         if e.get ('stop', False):
                             stopped = True
+                        if 'then' in e:
+                            scanSequence (e['then'])
                         break
                 else:
+                    print (f'Parallell no match for {display}')
                     break
                 if not stopped:
                     previous_display = display
@@ -490,7 +500,7 @@ class CTS600:
         """
         f = dict
         scan_menu = [
-            _scanner_reset,
+            _scanner_reset_menu(),
             f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
             f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
             f (regexp="^(?P<value>\w+)", var='mode'),
@@ -499,7 +509,7 @@ class CTS600:
         if updateShowData:
             show_data = [
                 f (display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
-                [ Key.DOWN,
+                [ (Key.DOWN, ""),
                   f (regexp="STATUS/(?P<value>.*)", var='status'),
                   # Match any temperature sensor like T5:
                   f (regexp="(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
@@ -531,10 +541,41 @@ class CTS600:
                 
         f = dict
         return self.scanMenu ([
-            _scanner_reset,
-            [ Key.DOWN, f (regexp="COOLING", stop=True), f (regexp='.*') ],
-            f (display=Key.ENTER, regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
-            f (display=Key.DOWN, regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
+            _scanner_reset_menu(),
+            _scanner_search_menu (Key.DOWN, "COOLING"),
+            Key.ENTER,
+            [ (Key.DOWN, ""),
+              f (regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
+              f (regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
+             ]
+        ])
+    
+    def scanServiceMenu (self):
+        """ Requires that service menu is enabled. """
+        f = dict
+        return self.scanMenu ([
+            _scanner_reset_menu(),
+            _scanner_search_menu (Key.DOWN, "SERVICE"),
+            Key.ENTER,
+            [ (Key.DOWN, ""),
+              f (regexp="AIR/EXCHANGE",
+                 then=[ Key.ENTER,
+                        [ (Key.DOWN, "AIR_"),
+                          f (regexp="(?P<var>[\w/<>]+)\s+(?P<value>\d+)%", parse=int, kind='%'),
+                          f (regexp="(?P<var>[\w/<>]+)\s+(?P<value>\d+)", parse=int),
+                          f (regexp=".*")
+                         ],
+                        Key.ESC]),
+              f (regexp="DEFROST",
+                 then=[ Key.ENTER,
+                        [ (Key.NONE, "DEFROST_"),
+                          f (regexp="(?P<var>.+?)(?P<value>[\w.]+)$")
+                         ],
+                        Key.ESC
+                       ]
+                 ),
+              f (regexp=".*")
+             ]
         ])
     
     def setThermostat (self, celsius):
