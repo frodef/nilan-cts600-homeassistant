@@ -165,10 +165,10 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         if self._mode_map[current_mode] == hvac_mode:
             return
         elif hvac_mode == HVACMode.OFF:
-            await self.key_off()
+            await self.coordinator.key_off()
         else:
             if current_mode == 'OFF':
-                await self.key_on()
+                await self.coordinator.key_on()
             await self.coordinator.setMode (self._mode_imap[hvac_mode])
 
     
