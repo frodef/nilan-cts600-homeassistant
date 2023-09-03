@@ -161,14 +161,14 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         """Set new target hvac mode."""
         _LOGGER.debug ('set hvac_mode %s', hvac_mode)
         display = await self.coordinator.resetMenu()
-        current_mode = display.split('/')[0]
+        current_mode = display.split('/')[0].split(' ')[0]
         if self._mode_map[current_mode] == hvac_mode:
             return
         elif hvac_mode == HVACMode.OFF:
-            await self.key_off()
+            await self.coordinator.key_off()
         else:
             if current_mode == 'OFF':
-                await self.key_on()
+                await self.coordinator.key_on()
             await self.coordinator.setMode (self._mode_imap[hvac_mode])
 
     

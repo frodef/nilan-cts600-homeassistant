@@ -526,7 +526,7 @@ class CTS600:
                 ]
             scan_menu += show_data
         scanData, scanMetaData = self.scanMenu (scan_menu, data=self.data.copy(), meta_data = self.metaData.copy())
-        scanData['LED'] = self.led()
+        scanData['led'] = self.led()
         self.data = scanData
         self.metaData = scanMetaData
         return self.data
