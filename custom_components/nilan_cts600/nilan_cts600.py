@@ -453,10 +453,10 @@ class CTS600:
                     display = run_action(e['display']) if 'display' in e else self.display()
                     # print (f"scan: {e}, disp {display}")
                     if 'regexp' in e:
-                        if not (match := re.match (e['regexp'], display)):
+                        if not (match := re.match (e['regexp'], display)) and ('default' not in e):
                             break # Stop sequence at first mismatch
                         else:
-                            record_matching_entry (match.groupdict(), e)
+                            record_matching_entry (match.groupdict() if match else { 'value': e['default'] }, e)
                             if 'gonext' in e:
                                 run_action(e['gonext'])
                 else:
@@ -502,8 +502,9 @@ class CTS600:
         scan_menu = [
             _scanner_reset_menu(),
             f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
-            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
+            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
             f (regexp="^(?P<value>\w+)", var='mode'),
+            f (regexp="^\w+\s+(?P<value>\w)", var='program', default=None),
             f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
         ]
         if updateShowData:
