@@ -502,7 +502,7 @@ class CTS600:
         scan_menu = [
             _scanner_reset_menu(),
             f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
-            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int),
+            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
             f (regexp="^(?P<value>\w+)", var='mode'),
             f (regexp="^\w+\s+(?P<value>\w)", var='program', default=None),
             f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
