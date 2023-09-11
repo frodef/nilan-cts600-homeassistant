@@ -20,47 +20,28 @@ from .coordinator import getCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-_ENTITIES = (
-    SensorEntityDescription(
-        key="T1",
-        name="T1",
-        state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    ),
-    SensorEntityDescription(
-        key="T2",
-        name="T2",
-        state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    ),
-    SensorEntityDescription(
-        key="T5",
-        name="T5",
-        state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    ),
-    SensorEntityDescription(
-        key="T6",
-        name="T6",
-        state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    ),
-    SensorEntityDescription(
-        key="T15",
-        name="T5",
-        state_class=SensorStateClass.MEASUREMENT,
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-    ),
-    SensorEntityDescription(
-        key="display",
-        name="display"
-    )
-)
+def discover_sensors(cts600):
+    data = cts600.data
+    metaData = cts600.metaData
+    sensors = []
+
+    for e in data:
+        sed = SensorEntityDescription(key = e, name = e.replace('_', ' ').lower())
+        description = metaData[e]['description'] if e in metaData and 'description' in metaData[e] else None
+        kind = metaData[e]['kind'] if e in metaData and 'kind' in metaData[e] else None
+
+        if description:
+            sed.name = sed.name + " (" + description.replace('_', ' ').capitalize() + ")"
+
+        if kind == 'temperature':
+            sed.name = sed.name[0].upper() + sed.name[1:]
+            sed.state_class = SensorStateClass.MEASUREMENT
+            sed.device_class = SensorDeviceClass.TEMPERATURE
+            sed.native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+        sensors.append(sed)
+
+    return sensors
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """ foo """
@@ -75,8 +56,9 @@ async def async_setup_platform(
 ) -> None:
     """Set up the platform."""
     coordinator = await getCoordinator (hass, config)
-    async_add_entities([CTS600Sensor (coordinator, e, None) for e in _ENTITIES],
-                       update_before_add=True)
+    await coordinator.updateData()
+    discovered_sensors = discover_sensors(coordinator.cts600)
+    async_add_entities([CTS600Sensor (coordinator, e, None) for e in discovered_sensors], update_before_add=True)
 
 class CTS600Sensor(CoordinatorEntity, SensorEntity):
     """An entity using CoordinatorEntity.
@@ -94,23 +76,22 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
     ) -> None:
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator)
-        self.var_name = description.key
         # self._attr_name = DOMAIN + "_" + spec["name"]
         # self._attr_state_class = spec["state-class"]
         # self._attr_device_class = spec["device-class"]
         # self._attr_native_unit_of_measurement = spec["unit"]
 
-        self._name = coordinator.name + " " + self.var_name
+        self._name = coordinator.name + " " + description.name
         self._attr_device_info = coordinator.device_info
         self.entity_description = description
-        self._attr_unique_id = f"serial-{self.coordinator.cts600.port}-{self.var_name}"
+        self._attr_unique_id = f"serial-{self.coordinator.cts600.port}-{description.key}"
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         #        _LOGGER.debug("Entity update: %s", self.coordinator.data)
-        value = self.coordinator.cts600.data.get(self.var_name)
-        if value:
+        value = self.coordinator.cts600.data.get(self.entity_description.key)
+        if value != self._attr_native_value:
             self._attr_native_value = value
             self.async_write_ha_state()
 
