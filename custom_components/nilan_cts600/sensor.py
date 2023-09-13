@@ -21,6 +21,7 @@ from .coordinator import getCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 def discover_sensors(cts600):
+    """ Create entity descriptors based on scanning the CTS600 data menu. """
     data = cts600.data
     metaData = cts600.metaData
     sensors = []
