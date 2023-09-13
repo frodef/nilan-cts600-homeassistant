@@ -107,6 +107,10 @@ class CTS600Coordinator(DataUpdateCoordinator):
 
     def manual_mode (self):
         return 30 > (time.time_ns()//1000_000_000 - self._manual_activity_ts)
+
+    def request_refresh (self):
+        self._updateDataCounter = 100
+        self.async_set_updated_data (self.data)
         
     async def _async_update_data(self):
         """Fetch data from API endpoint.
@@ -192,14 +196,18 @@ class CTS600Coordinator(DataUpdateCoordinator):
     def setT15 (self, celcius):
         return self._call (self.cts600.setT15, celcius)
 
-    def setFlow (self, flow):
-        return self._call (self.cts600.setFlow, flow)
+    async def setFlow (self, flow):
+        await self._call (self.cts600.setFlow, flow)
+        self.request_refresh ()
 
-    def setThermostat (self, celsius):
-        return self._call (self.cts600.setThermostat, celsius)
+    async def setThermostat (self, celsius):
+        await self._call (self.cts600.setThermostat, celsius)
+        self.request_refresh ()
 
     def resetMenu (self):
         return self._call (self.cts600.resetMenu)
 
-    def setMode (self, mode):
-        return self._call (self.cts600.setMode, mode)
+    async def setMode (self, mode):
+        await self._call (self.cts600.setMode, mode)
+        self.request_refresh ()
+        
