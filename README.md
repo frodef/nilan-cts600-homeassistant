@@ -70,7 +70,7 @@ I'd advise against the blue translucent ones.
 ## Physical connection
 
 The Nilan VPL-15 (and presumably other) unit connects to the physical
-control panel via 4 wires. Two wires provides 12V power, and the
+control panel via 4 wires. Two wires provide 12V power, and the
 remaining two are the RS485 A and B communication wires.
 
 Only the two A and B communication wires must be connected to the USB
