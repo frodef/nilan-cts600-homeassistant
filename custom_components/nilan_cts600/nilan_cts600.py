@@ -226,7 +226,16 @@ def _scanner_reset_menu ():
 def _scanner_search_menu (action, regexp):
     """ Do action until regexp matches. """
     return [ (action,""), dict(regexp=regexp, stop=True), dict(regexp='.*') ]
-    
+
+def _scanner_top_display ():
+    f = dict
+    return [
+        f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
+        f (regexp=".*>\d< (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
+        f (regexp="^(?P<value>\w+)", var='mode'),
+        f (regexp="^\w+\s+(?P<value>\w)", var='program', default=None),
+        f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
+    ]
 
 class CTS600:
     _ack_handlers = {
@@ -492,21 +501,17 @@ class CTS600:
         return data, metaData
 
     def updateDisplay (self):
-        self.data['display'] = self.display(newline='\n')
+        """ Scan whatever info is in the display, assuming it's the default top display text. """
+        scanData, scanMetaData = self.scanMenu (_scanner_top_display(), data=self.data.copy(), meta_data = self.metaData.copy())
+        self.data = scanData
+        self.metaData = scanMetaData
         self.data['led'] = self.led()
         
     def scanData (self, updateShowData=True, updateAllData=False):
         """ Scan the main display and "SHOW DATA" menu and record the relevant operating parameters.
         """
         f = dict
-        scan_menu = [
-            _scanner_reset_menu(),
-            f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
-            f (regexp=".* (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
-            f (regexp="^(?P<value>\w+)", var='mode'),
-            f (regexp="^\w+\s+(?P<value>\w)", var='program', default=None),
-            f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
-        ]
+        scan_menu = [ _scanner_reset_menu() ] + _scanner_top_display ()
         if updateShowData:
             show_data = [
                 f (display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
