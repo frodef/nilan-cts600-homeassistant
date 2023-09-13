@@ -3,9 +3,9 @@
 This is a Home Assistant integration for the Nilan CTS600 HVAC control
 system, controlling e.g. the [Nilan
 VPL-15](https://www.en.nilan.dk/products/ventilation-with-cooling-heating/heat-pump-and-heat-pipe/vpl-15)
-ventilation unit. This integration, via a serial Modbus adapter, is to
-be connected to the ventilation unit and replaces the physical control
-panel.
+ventilation unit. This integration, via a serial RS485/Modbus adapter,
+is to be connected to the ventilation unit and replaces the physical
+control panel.
 
 Currently, this integration implements the
 [Climate](https://www.home-assistant.io/integrations/climate/)
@@ -13,7 +13,10 @@ interface for Home Assistant. This means that you can set the
 ventilation unit's mode (auto, heat, cool, or off) and its target
 temperature. You can also set the fan speed (1, 2, 3, or 4). Finally,
 the thermometer in the physical control panel (Nilan sensor T15) is
-replaced with any HA entity, typically a temperature sensor.
+replaced with any HA entity, typically a temperature sensor.  Also,
+there are button entities corresponding to the physical buttons, and
+separate sensor entities for the text display and various temperatures
+and fan speed.
 
 ![CTS600](https://nilanireland.ie/wp-content/uploads/2013/08/CTS-600-1.png "CTS600")
 
@@ -27,8 +30,9 @@ interfacing, mobile apps and whatnot.
 
 This integration is specifically for units controlled via the CTS600
 interface. Historically this is an intermediate technology, and
-obsolete now since a number of years, which is digital but not really
-designed to be interfaced or integrated with other systems.
+obsolete now since a number of years. The CTS600 is a digital system
+and protocol, but not really designed to be interfaced or integrated
+with other systems.
 
 There exists a different integration in HACS for CTS602-based systems,
 named
@@ -49,6 +53,8 @@ VPL-15 that I believe have been delivered with the CTS600 controller:
   * VPL-28
   * VP-18 M2
   * VGU-250
+
+The Comfort-300 has reportedly also been tested.
 
 # Serial RS485 adapter
 
