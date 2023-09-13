@@ -602,7 +602,8 @@ class CTS600:
         elif celsius < currentThermostat:
             for _ in range (0, currentThermostat - celsius):
                 self.key_down()
-        return self.key_enter()
+        self.key_enter() # Commit value
+        return self.key(Key.NONE)
 
     def setFlow (self, flow):
         """ Set fan flow level to FLOW, i.e. 1-4. """
@@ -625,7 +626,7 @@ class CTS600:
             for _ in range (0, currentFlow - flow):
                 self.key_down()
         self.key_enter() # commit value
-        return self.key()
+        return self.key(Key.NONE)
 
     def setLanguage (self, language):
         """ Set CTS600 display language to the first language that matches LANGUAGE. """
