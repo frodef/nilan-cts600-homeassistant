@@ -27,20 +27,23 @@ def discover_sensors(cts600):
     sensors = []
 
     for e in data:
-        sed = SensorEntityDescription(key = e, name = e.replace('_', ' ').lower())
         description = metaData[e]['description'] if e in metaData and 'description' in metaData[e] else None
         kind = metaData[e]['kind'] if e in metaData and 'kind' in metaData[e] else None
-
+        sed_name = e.replace('_', ' ').lower()
+        
         if description:
-            sed.name = sed.name + " (" + description.replace('_', ' ').capitalize() + ")"
+            sed_name = sed_name + " (" + description.replace('_', ' ').capitalize() + ")"
 
         if kind == 'temperature':
-            sed.name = sed.name[0].upper() + sed.name[1:]
-            sed.state_class = SensorStateClass.MEASUREMENT
-            sed.device_class = SensorDeviceClass.TEMPERATURE
-            sed.native_unit_of_measurement = UnitOfTemperature.CELSIUS
-
-        sensors.append(sed)
+            sensors.append(
+                SensorEntityDescription(key = e,
+                                        name = sed_name[0].upper() + sed_name[1:],
+                                        state_class = SensorStateClass.MEASUREMENT,
+                                        device_class = SensorDeviceClass.TEMPERATURE,
+                                        native_unit_of_measurement = UnitOfTemperature.CELSIUS))
+        else:
+            sensors.append(
+                SensorEntityDescription(key = e, name=sed_name))
 
     return sensors
 
@@ -59,7 +62,7 @@ async def async_setup_platform(
     coordinator = await getCoordinator (hass, config)
     await coordinator.updateData()
     discovered_sensors = discover_sensors(coordinator.cts600)
-    async_add_entities([CTS600Sensor (coordinator, e, None) for e in discovered_sensors], update_before_add=True)
+    async_add_entities([CTS600Sensor (coordinator, e, None) for e in discovered_sensors], update_before_add=False)
 
 class CTS600Sensor(CoordinatorEntity, SensorEntity):
     """An entity using CoordinatorEntity.
@@ -90,7 +93,7 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        #        _LOGGER.debug("Entity update: %s", self.coordinator.data)
+        _LOGGER.debug("Entity update: %s", self.coordinator.data)
         value = self.coordinator.cts600.data.get(self.entity_description.key)
         if value != self._attr_native_value:
             self._attr_native_value = value
