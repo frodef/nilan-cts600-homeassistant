@@ -98,7 +98,10 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
     @property
     def supported_features(self):
         """Return the set of supported features."""
-        return ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
+        return ClimateEntityFeature.TARGET_TEMPERATURE \
+            | ClimateEntityFeature.FAN_MODE \
+            | ClimateEntityFeature.TURN_ON \
+            | ClimateEntityFeature.TURN_OFF
     
     @property
     def hvac_modes(self):
