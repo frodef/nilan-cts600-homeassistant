@@ -26,11 +26,13 @@ def discover_sensors(cts600):
     metaData = cts600.metaData
     sensors = []
 
+    _LOGGER.debug ("discover_sensors: %s", data)
     for e in data:
         description = metaData[e]['description'] if e in metaData and 'description' in metaData[e] else None
         kind = metaData[e]['kind'] if e in metaData and 'kind' in metaData[e] else None
         sed_name = e.replace('_', ' ').lower()
         
+        _LOGGER.debug ("discover_sensors sed_name: %s", sed_name)
         if description:
             sed_name = sed_name + " (" + description.replace('_', ' ').capitalize() + ")"
 
