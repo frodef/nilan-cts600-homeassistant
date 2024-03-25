@@ -38,7 +38,7 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         # Map CTS600 display text to HVACMode.
         'HEAT': HVACMode.HEAT,
         'COOL': HVACMode.COOL,
-        'AUTO': HVACMode.AUTO,
+        'AUTO': HVACMode.HEAT_COOL,
         'OFF': HVACMode.OFF,
     }
     _mode_imap = {v:k for k,v in _mode_map.items()}
@@ -108,7 +108,7 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
     @property
     def hvac_modes(self):
         """Return the list of available hvac modes."""
-        return [HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO, HVACMode.OFF]
+        return [HVACMode.HEAT, HVACMode.COOL, HVACMode.HEAT_COOL, HVACMode.OFF]
 
     @property
     def hvac_mode(self):
