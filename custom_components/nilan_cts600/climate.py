@@ -66,6 +66,8 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
             key='nilan_cts600',
             icon='mdi:hvac'
         )
+        self._enable_turn_on_off_backwards_compatibility = False
+        _LOGGER.debug ('nilan INIT %s -> %s', self._name, self.entity_id)
         
     @property
     def name (self):
@@ -113,7 +115,7 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
         """Return hvac mode ie. heat, cool, fan only."""
         cts600mode = self.cts600.data.get ('mode')
         mode = self._mode_map.get(cts600mode, None) if cts600mode else None
-        # _LOGGER.debug ('hvac mode %s -> %s', cts600mode, mode)
+        _LOGGER.debug ('hvac mode %s -> %s', cts600mode, mode)
         return mode
 
     @property
@@ -174,4 +176,17 @@ class CTS600Climate (CoordinatorEntity, ClimateEntity):
                 await self.coordinator.key_on()
             await self.coordinator.setMode (self._mode_imap[hvac_mode])
 
-    
+    def turn_on(self) -> None:
+        """Turn the entity on."""
+        self.coordinator.key_on()
+
+    async def async_turn_on(self) -> None:
+        await self.coordinator.key_on()
+        
+    def turn_off(self) -> None:
+        """Turn the entity off."""
+        self.coordinator.key_off()
+
+    async def async_turn_off(self) -> None:
+        await self.coordinator.key_off()
+        
