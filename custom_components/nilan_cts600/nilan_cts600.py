@@ -230,11 +230,11 @@ def _scanner_search_menu (action, regexp):
 def _scanner_top_display ():
     f = dict
     return [
-        f (regexp="(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
-        f (regexp=".*>\d< (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
-        f (regexp="^(?P<value>\w+)", var='mode'),
-        f (regexp="^\w+\s+(?P<value>\w)", var='program', default=None),
-        f (regexp=".*>(?P<value>\d+)<", var='flow', parse=int)
+        f (regexp=r"(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
+        f (regexp=r".*>\d< (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
+        f (regexp=r"^(?P<value>\w+)", var='mode'),
+        f (regexp=r"^\w+\s+(?P<value>\w)", var='program', default=None),
+        f (regexp=r".*>(?P<value>\d+)<", var='flow', parse=int)
     ]
 
 class CTS600:
@@ -516,19 +516,19 @@ class CTS600:
             show_data = [
                 f (display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
                 [ (Key.DOWN, ""),
-                  f (regexp="STATUS/(?P<value>.*)", var='status'),
+                  f (regexp=r"STATUS/(?P<value>.*)", var='status'),
                   # Match any temperature sensor like T5:
-                  f (regexp="(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
+                  f (regexp=r"(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
                   # Match any flow value:
-                  f (regexp="(?P<var>.*/FLOW)\s+(?P<value>\d+)", parse=int, kind='flow'),
+                  f (regexp=r"(?P<var>.*/FLOW)\s+(?P<value>\d+)", parse=int, kind='flow'),
                  ],
             ]
             if updateAllData:
                 show_data[1] += [
                     # Match any software version:
-                    f (regexp="(?P<var>SOFTWARE.*/\w*)\s*(?P<value>\S+)\s*"),
+                    f (regexp=r"(?P<var>SOFTWARE.*/\w*)\s*(?P<value>\S+)\s*"),
                     # Finally, match any variable/value on separate lines:
-                    f (regexp="(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
+                    f (regexp=r"(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
                 ]
             scan_menu += show_data
         scanData, scanMetaData = self.scanMenu (scan_menu, data=self.data.copy(), meta_data = self.metaData.copy())
@@ -551,8 +551,8 @@ class CTS600:
             _scanner_search_menu (Key.DOWN, "COOLING"),
             Key.ENTER,
             [ (Key.DOWN, ""),
-              f (regexp="TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
-              f (regexp="VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
+              f (regexp=r"TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
+              f (regexp=r"VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
              ]
         ])
     
@@ -564,23 +564,23 @@ class CTS600:
             _scanner_search_menu (Key.DOWN, "SERVICE"),
             Key.ENTER,
             [ (Key.DOWN, ""),
-              f (regexp="AIR/EXCHANGE",
+              f (regexp=r"AIR/EXCHANGE",
                  then=[ Key.ENTER,
                         [ (Key.DOWN, "AIR_"),
-                          f (regexp="(?P<var>[\w/<>]+)\s+(?P<value>\d+)%", parse=int, kind='%'),
-                          f (regexp="(?P<var>[\w/<>]+)\s+(?P<value>\d+)", parse=int),
-                          f (regexp=".*")
+                          f (regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)%", parse=int, kind='%'),
+                          f (regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)", parse=int),
+                          f (regexp=r".*")
                          ],
                         Key.ESC]),
-              f (regexp="DEFROST",
+              f (regexp=r"DEFROST",
                  then=[ Key.ENTER,
                         [ (Key.NONE, "DEFROST_"),
-                          f (regexp="(?P<var>.+?)(?P<value>[\w.]+)$")
+                          f (regexp=r"(?P<var>.+?)(?P<value>[\w.]+)$")
                          ],
                         Key.ESC
                        ]
                  ),
-              f (regexp=".*")
+              f (regexp=r".*")
              ]
         ])
     
