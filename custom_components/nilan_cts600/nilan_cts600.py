@@ -2,7 +2,7 @@
 import codecs, struct, time, os, re
 from enum import Enum
 from pymodbus.client import ModbusSerialClient
-from pymodbus.message.rtu import MessageRTU
+from pymodbus.framer.rtu import FramerRTU
 
 class NilanCTS600Exception (Exception):
     pass
@@ -140,7 +140,7 @@ def nilanCelsiusToAD (celsius, x=56.25):
     return round ((x - celsius) / ((34 - 12) / (328 - 168)))
 
 def appendCRC (frame):
-    crc = MessageRTU.compute_CRC (frame)
+    crc = FramerRTU.compute_CRC (frame)
     return frame + [(crc>>0)&0xff, (crc>>8)&0xff]
 
 default_slave_id_format = (
@@ -214,7 +214,7 @@ def read_response (rawRecv):
         raise Exception(f"Unknown response op {op}")
 
     data = recv(data_size)
-    computedCRC = MessageRTU.compute_CRC(bytes(frame))
+    computedCRC = FramerRTU.compute_CRC(bytes(frame))
     gotCRC = word16b(recv)
     # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
     return op.name, parameters, data, gotCRC == computedCRC
@@ -270,7 +270,6 @@ class CTS600:
         
     def connect (self):
         self.client.connect()
-        self.client.framer.resetFrame()
         
     def slaveID (self):
         return decodeSlaveID (self.slave_id_data, self._slave_id_struct)
