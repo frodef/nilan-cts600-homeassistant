@@ -10,5 +10,5 @@
     "homekit": {},
     "iot_class": "local_push",
     "requirements": ["pymodbus>=3.8.3"],
-    "version": "2024.03.25"
+    "version": "2025.06.16"
 }
