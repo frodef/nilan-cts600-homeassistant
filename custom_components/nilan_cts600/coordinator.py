@@ -10,7 +10,8 @@ from homeassistant.components.climate.const import (
     HVACAction,
     ClimateEntityFeature
 )
-from homeassistant.helpers.event import async_track_state_change
+from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.const import (
     UnitOfTemperature,
     ATTR_UNIT_OF_MEASUREMENT,
@@ -95,10 +96,10 @@ class CTS600Coordinator(DataUpdateCoordinator):
         self._manual_activity_ts = 0
         
         if sensor_entity_id:
-            sensor_state = hass.states.get(sensor_entity_id)
-            if sensor_state:
-                self.hass.loop.create_task (self._update_T15_state (sensor_entity_id, None, sensor_state))
-            async_track_state_change(hass, sensor_entity_id, self._update_T15_state)
+            # sensor_state = hass.states.get(sensor_entity_id)
+            # if sensor_state:
+            #     self.hass.loop.create_task (self._update_T15_state (sensor_entity_id, None, sensor_state))
+            async_track_state_change_event(hass, sensor_entity_id, self._update_T15_state)
         else:
             self._t15_fallback = 21
 
@@ -134,8 +135,10 @@ class CTS600Coordinator(DataUpdateCoordinator):
                     self._updateDataCounter = 0
                 return await self.updateData(updateShowData=updateShowData)
 
-    async def _update_T15_state (self, entity_id, old_state, new_state):
+    async def _update_T15_state (self, event: Event[EventStateChangedData]) -> None:
         """ Update thermostat with latest (room) temperature from sensor."""
+        new_state = event.data["new_state"]
+
         if new_state.state is None or new_state.state in ["unknown", "unavailable"]:
             return
         if not self.hass:
@@ -146,7 +149,6 @@ class CTS600Coordinator(DataUpdateCoordinator):
             float(new_state.state), sensor_unit, UnitOfTemperature.CELSIUS
         )
         await self.setT15 (value)
-
         
     async def _call (self, method, *args):
         """Make a synchronous call to CTS600 by creating a job and
