@@ -6,19 +6,22 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-def file_in_use (file_path):
-    """ Return True if FILE_PATH is in use by the current process, as indicated by an entry in /proc/self/fd. """
+
+def file_in_use(file_path):
+    """Return True if FILE_PATH is in use by the current process, as indicated by an entry in /proc/self/fd."""
     import os
-    rpath = os.path.realpath (file_path)
+
+    rpath = os.path.realpath(file_path)
     try:
-        for entry in os.scandir ('/proc/self/fd'):
-            if os.path.realpath (entry) == rpath:
+        for entry in os.scandir("/proc/self/fd"):
+            if os.path.realpath(entry) == rpath:
                 return True
     except FileNotFoundError:
         pass
     return False
 
-def list_serial_devices (by_id="/dev/serial/by-id"):
+
+def list_serial_devices(by_id="/dev/serial/by-id"):
     """Return a list of {'dev': <device-path>, 'description':
     <description>, 'id': <bool>} for each serial device. Prefer
     devices found in /dev/serial/by-id because these will not change
@@ -27,6 +30,7 @@ def list_serial_devices (by_id="/dev/serial/by-id"):
 
     """
     import serial.tools.list_ports, os
+
     ids = {}
     try:
         for entry in os.scandir(by_id):
@@ -36,19 +40,20 @@ def list_serial_devices (by_id="/dev/serial/by-id"):
     except FileNotFoundError:
         pass
 
-    return sorted([{'dev': ids[p.device].path,
-                    'description': ids[p.device].name,
-                    'id': True}
-                   if ids.get(p.device)
-                   else {'dev': p.device,
-                         'description': str(p),
-                         'id': False}
-                   for p in serial.tools.list_ports.comports()
-                   ],
-                  key=lambda x: (2 if file_in_use(x['dev']) else 0) + (1 if not x['id'] else 0))
+    return sorted(
+        [
+            {"dev": ids[p.device].path, "description": ids[p.device].name, "id": True}
+            if ids.get(p.device)
+            else {"dev": p.device, "description": str(p), "id": False}
+            for p in serial.tools.list_ports.comports()
+        ],
+        key=lambda x: (2 if file_in_use(x["dev"]) else 0) + (1 if not x["id"] else 0),
+    )
+
 
 class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
     """Example config flow."""
+
     # The schema version of the entries that it creates
     # Home Assistant will call your migrate method if the version changes
     VERSION = 1
@@ -61,54 +66,49 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
         detected_ports = list_serial_devices()
         suggestions = user_input or {
             "name": "Nilan Central Ventilation",
-            "port": detected_ports[0]['dev'] if detected_ports else "",
+            "port": detected_ports[0]["dev"] if detected_ports else "",
             "retries": 3,
         }
 
         config_schema = {
-            vol.Required ("name"):
-            selector ({
-                "text": {
-                    "type": "text"
-                }
-            }),
-            vol.Required("port"):
-            selector({
-                "select": {
-                    "options": [{'label': p['description'], 'value': p['dev']} for p in detected_ports],
-                    "mode": "dropdown",
-                    "custom_value": True,
-                }
-            }),
-            vol.Optional ("sensor_T15"): selector ({
-                "entity": {
-                    "filter": {
-                        "domain": ["sensor", "input_number"]
+            vol.Required("name"): selector({"text": {"type": "text"}}),
+            vol.Optional("port"): selector(
+                {
+                    "select": {
+                        "options": [
+                            {"label": p["description"], "value": p["dev"]}
+                            for p in detected_ports
+                        ],
+                        "mode": "dropdown",
+                        "custom_value": True,
                     }
                 }
-            }),
+            ),
+            vol.Optional("sensor_T15"): selector(
+                {"entity": {"filter": {"domain": ["sensor", "input_number"]}}}
+            ),
         }
         if self.show_advanced_options:
-            config_schema[vol.Optional ("retries", default=2)] = selector ({
-                "number": {
-                    "min": 1,
-                    "max": 5,
-                    "mode": "box"
-                }
-            })
-            
-        if user_input and user_input["port"]:
-            try:
-                serial.Serial(user_input["port"]).close()
-            except serial.SerialException:
-                errors["port"] = f"Not a serial port: {user_input['port']}"
+            config_schema[vol.Optional("retries", default=2)] = selector(
+                {"number": {"min": 1, "max": 5, "mode": "box"}}
+            )
+
+        # if user_input and user_input["port"]:
+        #     try:
+        #         serial.Serial(user_input["port"]).close()
+        #     except serial.SerialException:
+        #         errors["port"] = f"Not a serial port: {user_input['port']}"
 
         if user_input and not errors:
-            return self.async_create_entry (title=user_input["name"], data=user_input)
+            return self.async_create_entry(title=user_input["name"], data=user_input)
         else:
             if not detected_ports:
-                errors['base'] = "No serial port detected."
-            return self.async_show_form(step_id="user",
-                                        data_schema=self.add_suggested_values_to_schema(vol.Schema(config_schema), suggestions),
-                                        errors=errors,
-                                        last_step=True)
+                errors["base"] = "No serial port detected."
+            return self.async_show_form(
+                step_id="user",
+                data_schema=self.add_suggested_values_to_schema(
+                    vol.Schema(config_schema), suggestions
+                ),
+                errors=errors,
+                last_step=True,
+            )
