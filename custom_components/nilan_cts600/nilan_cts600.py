@@ -216,6 +216,9 @@ def read_response(rawRecv):
         frame.extend(b)
         return b
 
+    word16b(recv)  # discard transaction ID
+    word16b(recv)  # discard protocol ID
+    word16b(recv)  # discard length
     slave = word8(recv)
     function_code = word8(recv)
     try:
@@ -244,10 +247,11 @@ def read_response(rawRecv):
         raise Exception(f"Unknown response op {op}")
 
     data = recv(data_size)
-    computedCRC = FramerRTU.compute_CRC(bytes(frame))
-    gotCRC = word16b(recv)
+    # computedCRC = FramerRTU.compute_CRC(bytes(frame))
+    # gotCRC = word16b(recv)
     # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
-    return op.name, parameters, data, gotCRC == computedCRC
+    # return op.name, parameters, data, gotCRC == computedCRC
+    return op.name, parameters, data
 
 
 def _scanner_reset_menu():
@@ -291,7 +295,7 @@ class CTS600:
     def __init__(self, port=None, client=None, unit=3, rows=2, columns=8, logger=None):
         self.port = port
         # self.client = client or ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
-        self.client = ModbusTcpClient("192.168.7.195")
+        self.client = ModbusTcpClient("192.168.7.240")
         self._logger = logger
         self.unit = unit
         self.output_registers = [0] * 0x300
@@ -352,11 +356,12 @@ class CTS600:
         """
         (reqOP, *args) = request if isinstance(request, tuple) else (request,)
         self.send(reqOP, requestFrame)
-        (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
-        if not crcOK:
-            self.crc_fails += 1
-            self.log("CRC Fail: %s", request)
-            return False
+        # (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
+        (ackOP, parameters, data) = read_response(self.client.recv)
+        # if not crcOK:
+        #     self.crc_fails += 1
+        #     self.log("CRC Fail: %s", request)
+        #     return False
         handler = getattr(self, self._ack_handlers.get(ackOP, "None"), None)
         if handler:
             handler(ackOP, parameters, data, request=request)
@@ -365,8 +370,27 @@ class CTS600:
 
     def send(self, op, frame):
         """Transmit OP to SELF.UNIT and then remaining FRAME."""
-        f = [self.unit, op.value] + frame
-        f = appendCRC(f)
+        # MBAP Header for Modbus TCP: #
+        # Transaction ID (2 bytes) - can be 0
+        # Protocol ID (2 bytes) - always 0 for Modbus
+        # Length (2 bytes) - number of following bytes
+        # Unit ID (1 byte) - slave address
+        # Modbus PDU: #
+		# Function Code (1 byte)
+		# Data (n bytes)
+        length = 2 + len(frame)  # unit (1) + function code (1) + frame data
+        f = [
+            0,
+            0,
+            0,
+            0,
+            (length >> 8) & 0xFF,
+            length & 0xFF,
+            self.unit,
+            op.value,
+            *frame,
+        ]
+        # f = appendCRC(f)
         return self.client.send(bytes(f))
 
     def ack_report_slave_id(self, op, parameters, data, request=None):
