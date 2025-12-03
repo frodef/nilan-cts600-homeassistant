@@ -1,8 +1,13 @@
-import codecs, struct, time, os, re
+import codecs
 from enum import Enum
+import os
+import re
+import struct
+import time
+
+from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient, ModbusTcpClient
 from pymodbus.framer.rtu import FramerRTU
-from pymodbus import FramerType
 
 
 class NilanCTS600Exception(Exception):
@@ -908,7 +913,8 @@ class CTS600Mockup(CTS600):
         return self.slave_id
 
     def updateData(self, updateDisplayData):
-        import threading, time
+        import threading
+        import time
 
         def doit():
             time.sleep(2 if updateDisplayData else 6)

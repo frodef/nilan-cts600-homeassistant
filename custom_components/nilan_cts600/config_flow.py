@@ -1,7 +1,10 @@
 import logging
+
 import voluptuous as vol
+
 from homeassistant.config_entries import ConfigFlow
 from homeassistant.helpers.selector import selector
+
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,7 +32,9 @@ def list_serial_devices(by_id="/dev/serial/by-id"):
     believe to be unused by the current process.
 
     """
-    import serial.tools.list_ports, os
+    import os
+
+    import serial.tools.list_ports
 
     ids = {}
     try:

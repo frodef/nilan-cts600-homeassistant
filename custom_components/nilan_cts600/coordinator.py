@@ -1,27 +1,29 @@
-import logging, os, asyncio, async_timeout, time
+import asyncio
 from datetime import timedelta
+import logging
+import os
+import time
 
+import async_timeout
+
+from homeassistant.components.climate.const import (
+    ClimateEntityFeature,
+    HVACAction,
+    HVACMode,
+)
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfTemperature
+from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.exceptions import PlatformNotReady
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from homeassistant.components.climate.const import (
-    HVACMode,
-    HVACAction,
-    ClimateEntityFeature,
-)
-from homeassistant.core import Event, EventStateChangedData, callback
-from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.const import (
-    UnitOfTemperature,
-    ATTR_UNIT_OF_MEASUREMENT,
-)
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util.unit_conversion import TemperatureConverter
-from homeassistant.exceptions import PlatformNotReady
 
-from .const import DOMAIN, DATA_KEY
-from .nilan_cts600 import CTS600, Key, NilanCTS600ProtocolError, nilanString, findUSB
+from .const import DATA_KEY, DOMAIN
+from .nilan_cts600 import CTS600, Key, NilanCTS600ProtocolError, findUSB, nilanString
 
 _LOGGER = logging.getLogger(__name__)
 
