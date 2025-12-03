@@ -20,51 +20,68 @@ from .coordinator import getCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+
 def discover_sensors(cts600):
-    """ Create entity descriptors based on scanning the CTS600 data menu. """
+    """Create entity descriptors based on scanning the CTS600 data menu."""
     data = cts600.data
     metaData = cts600.metaData
     sensors = []
 
-    _LOGGER.debug ("discover_sensors: %s", data)
+    _LOGGER.debug("discover_sensors: %s", data)
     for e in data:
-        description = metaData[e]['description'] if e in metaData and 'description' in metaData[e] else None
-        kind = metaData[e]['kind'] if e in metaData and 'kind' in metaData[e] else None
-        sed_name = e.replace('_', ' ').lower()
-        
-        _LOGGER.debug ("discover_sensors sed_name: %s", sed_name)
-        if description:
-            sed_name = sed_name + " (" + description.replace('_', ' ').capitalize() + ")"
+        description = (
+            metaData[e]["description"]
+            if e in metaData and "description" in metaData[e]
+            else None
+        )
+        kind = metaData[e]["kind"] if e in metaData and "kind" in metaData[e] else None
+        sed_name = e.replace("_", " ").lower()
 
-        if kind == 'temperature':
+        _LOGGER.debug("discover_sensors sed_name: %s", sed_name)
+        if description:
+            sed_name = (
+                sed_name + " (" + description.replace("_", " ").capitalize() + ")"
+            )
+
+        if kind == "temperature":
             sensors.append(
-                SensorEntityDescription(key = e,
-                                        name = sed_name[0].upper() + sed_name[1:],
-                                        state_class = SensorStateClass.MEASUREMENT,
-                                        device_class = SensorDeviceClass.TEMPERATURE,
-                                        native_unit_of_measurement = UnitOfTemperature.CELSIUS))
+                SensorEntityDescription(
+                    key=e,
+                    name=sed_name[0].upper() + sed_name[1:],
+                    state_class=SensorStateClass.MEASUREMENT,
+                    device_class=SensorDeviceClass.TEMPERATURE,
+                    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+                )
+            )
         else:
-            sensors.append(
-                SensorEntityDescription(key = e, name=sed_name))
+            sensors.append(SensorEntityDescription(key=e, name=sed_name))
 
     return sensors
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """ foo """
-    _LOGGER.debug ("%s setup_entry: %s", __name__, entry.data)
-    await async_setup_platform (hass, entry.data, async_add_entities)
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """foo"""
+    _LOGGER.debug("%s setup_entry: %s", __name__, entry.data)
+    await async_setup_platform(hass, entry.data, async_add_entities)
+
 
 async def async_setup_platform(
-        hass: HomeAssistant,
-        config: ConfigType,
-        async_add_entities: AddEntitiesCallback,
-        discovery_info: DiscoveryInfoType | None = None,
+    hass: HomeAssistant,
+    config: ConfigType,
+    async_add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up the platform."""
-    coordinator = await getCoordinator (hass, config)
+    coordinator = await getCoordinator(hass, config)
     await coordinator.updateData()
     discovered_sensors = discover_sensors(coordinator.cts600)
-    async_add_entities([CTS600Sensor (coordinator, e, None) for e in discovered_sensors], update_before_add=False)
+    async_add_entities(
+        [CTS600Sensor(coordinator, e, None) for e in discovered_sensors],
+        update_before_add=False,
+    )
+
 
 class CTS600Sensor(CoordinatorEntity, SensorEntity):
     """An entity using CoordinatorEntity.
@@ -90,7 +107,9 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
         self._name = coordinator.name + " " + description.name
         self._attr_device_info = coordinator.device_info
         self.entity_description = description
-        self._attr_unique_id = f"serial-{self.coordinator.cts600.port}-{description.key}"
+        self._attr_unique_id = (
+            f"serial-{self.coordinator.cts600.port}-{description.key}"
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -102,6 +121,6 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
             self.async_write_ha_state()
 
     @property
-    def name (self):
+    def name(self):
         """Return the name of the climate device."""
         return self._name

@@ -376,8 +376,8 @@ class CTS600:
         # Length (2 bytes) - number of following bytes
         # Unit ID (1 byte) - slave address
         # Modbus PDU: #
-		# Function Code (1 byte)
-		# Data (n bytes)
+        # Function Code (1 byte)
+        # Data (n bytes)
         length = 2 + len(frame)  # unit (1) + function code (1) + frame data
         f = [
             0,
