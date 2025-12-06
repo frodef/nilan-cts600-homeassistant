@@ -128,15 +128,8 @@ class CTS600Climate(CoordinatorEntity, ClimateEntity):
     @property
     def hvac_action(self):
         """Return hvac action ie. heat, cool, off."""
-        led = self.cts600.led()
-        if led == "on":
-            cts600action = self.cts600.data.get("status")
-            action = self._action_map.get(cts600action, None) if cts600action else None
-            return action
-        elif led == "off":
-            return HVACAction.IDLE
-        else:
-            return None
+        cts600action = self.cts600.data.get("status")
+        return self._action_map.get(cts600action, None) if cts600action else None
 
     @property
     def fan_modes(self):
