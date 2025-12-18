@@ -7,6 +7,7 @@ import time
 
 from pymodbus import FramerType
 from pymodbus.client import ModbusSerialClient, ModbusTcpClient
+from pymodbus.exceptions import ConnectionException
 from pymodbus.framer.rtu import FramerRTU
 
 
@@ -318,7 +319,26 @@ class CTS600:
             self._logger(fmt, *args)
 
     def connect(self):
-        self.client.connect()
+        """Connect to the Modbus device."""
+        if not self.client.connect():
+            raise ConnectionException(f"Failed to connect to {self.port}")
+
+    def disconnect(self):
+        """Close the connection to the Modbus device."""
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass  # Ignore errors during disconnect
+
+    def reconnect(self):
+        """Reconnect to the Modbus device after a connection failure."""
+        self.log("Attempting to reconnect to %s", self.port)
+        self.disconnect()
+        if not self.client.connect():
+            raise ConnectionException(f"Reconnect failed to {self.port}")
+        # Re-initialize after reconnect
+        self.initialize()
 
     def slaveID(self):
         return decodeSlaveID(self.slave_id_data, self._slave_id_struct)

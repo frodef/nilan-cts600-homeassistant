@@ -19,11 +19,24 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
+    UpdateFailed,
 )
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import DATA_KEY, DOMAIN
-from .nilan_cts600 import CTS600, Key, NilanCTS600ProtocolError, findUSB, nilanString
+from .nilan_cts600 import (
+    CTS600,
+    Key,
+    NilanCTS600Exception,
+    NilanCTS600ProtocolError,
+    findUSB,
+    nilanString,
+)
+
+try:
+    from pymodbus.exceptions import ConnectionException as ModbusConnectionException
+except ImportError:
+    ModbusConnectionException = OSError  # Fallback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,21 +140,45 @@ class CTS600Coordinator(DataUpdateCoordinator):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        if self.manual_mode():
-            # Do nothing, just update display
-            await self.key(Key.NONE)
-            self.cts600.updateDisplay()
-        else:
-            async with async_timeout.timeout(15):
-                if self._t15_fallback:
-                    await self.setT15(self._t15_fallback)
-                    self._t15_fallback = None
-                updateShowData = False
-                self._updateDataCounter += 1
-                if self._updateDataCounter >= 10:
-                    updateShowData = True
-                    self._updateDataCounter = 0
-                return await self.updateData(updateShowData=updateShowData)
+        try:
+            if self.manual_mode():
+                # Do nothing, just update display
+                await self.key(Key.NONE)
+                self.cts600.updateDisplay()
+            else:
+                async with async_timeout.timeout(15):
+                    if self._t15_fallback:
+                        await self.setT15(self._t15_fallback)
+                        self._t15_fallback = None
+                    updateShowData = False
+                    self._updateDataCounter += 1
+                    if self._updateDataCounter >= 10:
+                        updateShowData = True
+                        self._updateDataCounter = 0
+                    return await self.updateData(updateShowData=updateShowData)
+        except (
+            TimeoutError,
+            OSError,
+            ModbusConnectionException,
+            NilanCTS600Exception,
+            NilanCTS600ProtocolError,
+        ) as err:
+            # Try to reconnect on connection errors
+            _LOGGER.warning("Connection error, attempting reconnect: %s", err)
+            try:
+                await self.hass.async_add_executor_job(self.cts600.reconnect)
+                _LOGGER.info("Reconnect successful")
+            except (
+                TimeoutError,
+                OSError,
+                ModbusConnectionException,
+                NilanCTS600Exception,
+            ) as reconnect_err:
+                raise UpdateFailed(
+                    f"Connection failed and reconnect unsuccessful: {reconnect_err}"
+                ) from reconnect_err
+            raise UpdateFailed(f"Update failed: {err}") from err
+        return None
 
     async def _update_T15_state(self, event: Event[EventStateChangedData]) -> None:
         """Update thermostat with latest (room) temperature from sensor."""
@@ -162,9 +199,12 @@ class CTS600Coordinator(DataUpdateCoordinator):
         await self.setT15(value)
 
     async def _call(self, method, *args):
-        """Make a synchronous call to CTS600 by creating a job and
-        then await that job. Use self._lock to serialize access to the
-        underlying API. Also implement self.retries."""
+        """Make a synchronous call to CTS600.
+
+        Creates an executor job and awaits it. Uses self._lock to serialize
+        access to the underlying API. Implements retry logic and automatic
+        reconnection on connection failures.
+        """
         async with self._lock:
             for attempt in range(1, self.retries + 1):
                 _LOGGER.debug(
@@ -181,7 +221,28 @@ class CTS600Coordinator(DataUpdateCoordinator):
                         args,
                     )
                     if not attempt < self.retries:
-                        raise e
+                        raise
+                except (OSError, ModbusConnectionException) as e:
+                    # Connection error (e.g., broken pipe, connection reset)
+                    _LOGGER.warning(
+                        "Connection error in %s: %s, attempting reconnect",
+                        method.__func__.__name__,
+                        e,
+                    )
+                    try:
+                        await self.hass.async_add_executor_job(self.cts600.reconnect)
+                        _LOGGER.info("Reconnect successful, retrying operation")
+                        # Retry the operation after reconnect
+                        result = await self.hass.async_add_executor_job(method, *args)
+                        break
+                    except (
+                        TimeoutError,
+                        OSError,
+                        ModbusConnectionException,
+                        NilanCTS600Exception,
+                    ) as reconnect_err:
+                        _LOGGER.error("Reconnect failed: %s", reconnect_err)
+                        raise reconnect_err from e
             _LOGGER.debug(
                 "Call result: %s %s => %s", method.__func__.__name__, args, result
             )
