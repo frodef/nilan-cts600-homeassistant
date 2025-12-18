@@ -61,7 +61,7 @@ async def async_setup_entry(
 ) -> None:
     """foo"""
     _LOGGER.debug("%s setup_entry: %s", __name__, entry.data)
-    await async_setup_platform(hass, entry.data, async_add_entities)
+    await async_setup_platform(hass, entry.data, async_add_entities, entry_id=entry.entry_id)
 
 
 async def async_setup_platform(
@@ -69,19 +69,20 @@ async def async_setup_platform(
     config: ConfigType,
     async_add_entities: AddEntitiesCallback,
     discovery_info: DiscoveryInfoType | None = None,
+    entry_id: str | None = None,
 ) -> None:
     """Set up the platform."""
     coordinator = await getCoordinator(hass, config)
     await coordinator.updateData()
     discovered_sensors = discover_sensors(coordinator.cts600)
     async_add_entities(
-        [CTS600Sensor(coordinator, e, None) for e in discovered_sensors],
+        [CTS600Sensor(coordinator, e, entry_id) for e in discovered_sensors],
         update_before_add=False,
     )
 
 
 class CTS600Sensor(CoordinatorEntity, SensorEntity):
-    """An entity using CoordinatorEntity.
+    """Sensor entity for CTS600.
 
     The CoordinatorEntity class provides:
       should_poll
@@ -91,22 +92,18 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
 
     """
 
+    _attr_has_entity_name = True
+
     def __init__(
-        self, coordinator, description: SensorEntityDescription, entry_id: str
+        self, coordinator, description: SensorEntityDescription, entry_id: str | None = None
     ) -> None:
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator)
-        # self._attr_name = DOMAIN + "_" + spec["name"]
-        # self._attr_state_class = spec["state-class"]
-        # self._attr_device_class = spec["device-class"]
-        # self._attr_native_unit_of_measurement = spec["unit"]
 
-        self._name = coordinator.name + " " + description.name
         self._attr_device_info = coordinator.device_info
         self.entity_description = description
-        self._attr_unique_id = (
-            f"serial-{self.coordinator.cts600.port}-{description.key}"
-        )
+        # Use entry_id for stable unique_id
+        self._attr_unique_id = f"{entry_id}-{description.key}" if entry_id else f"{coordinator.name}-{description.key}"
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -116,8 +113,3 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
         if value != self._attr_native_value:
             self._attr_native_value = value
             self.async_write_ha_state()
-
-    @property
-    def name(self):
-        """Return the name of the climate device."""
-        return self._name

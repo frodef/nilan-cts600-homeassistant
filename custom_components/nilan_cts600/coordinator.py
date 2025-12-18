@@ -276,9 +276,10 @@ class CTS600Coordinator(DataUpdateCoordinator):
         product = nilanString(slaveID["product"])
         self.device_info = DeviceInfo(
             identifiers={
-                # Serial numbers are unique identifiers within a specific domain
-                (DOMAIN, self.cts600.port)
+                # Use connection info as unique identifier
+                (DOMAIN, self._connection_info)
             },
+            name=self.name,  # Use the name from ConfigEntry
             manufacturer="Nilan",
             model=product,
             sw_version=f"sw={slaveID['softwareVersion']},protocol={slaveID['protocolVersion']}",

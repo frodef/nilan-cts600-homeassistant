@@ -72,7 +72,9 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            self._connection_type = user_input.get("connection_type", CONNECTION_TYPE_TCP)
+            self._connection_type = user_input.get(
+                "connection_type", CONNECTION_TYPE_TCP
+            )
             if self._connection_type == CONNECTION_TYPE_TCP:
                 return await self.async_step_tcp()
             else:
@@ -84,7 +86,10 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
                     "select": {
                         "options": [
                             {"label": "Modbus TCP", "value": CONNECTION_TYPE_TCP},
-                            {"label": "Modbus RTU (Serial)", "value": CONNECTION_TYPE_SERIAL},
+                            {
+                                "label": "Modbus RTU (Serial)",
+                                "value": CONNECTION_TYPE_SERIAL,
+                            },
                         ],
                         "mode": "dropdown",
                     }
@@ -122,6 +127,7 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
             # Validate connection
             try:
                 from pymodbus.client import ModbusTcpClient
+
                 client = ModbusTcpClient(
                     host=user_input["host"],
                     port=int(user_input.get("tcp_port", 502)),
@@ -163,7 +169,7 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
 
         config_schema = {
             vol.Required("name"): selector({"text": {"type": "text"}}),
-            vol.Optional("port"): selector(
+            vol.Required("port"): selector(
                 {
                     "select": {
                         "options": [

@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    await async_setup_platform(hass, entry.data, async_add_entities)
+    await async_setup_platform(hass, entry.data, async_add_entities, entry_id=entry.entry_id)
 
 
 async def async_setup_platform(
@@ -30,10 +30,11 @@ async def async_setup_platform(
     config: ConfigType,
     async_add_entities: AddEntitiesCallback,
     discovery_info: DiscoveryInfoType | None = None,
+    entry_id: str | None = None,
 ) -> None:
     """Set up the platform."""
     coordinator = await getCoordinator(hass, config)
-    device = CTS600Climate(hass, coordinator)
+    device = CTS600Climate(hass, coordinator, entry_id)
     async_add_entities([device], update_before_add=True)
 
 
@@ -55,12 +56,15 @@ class CTS600Climate(CoordinatorEntity, ClimateEntity):
         "OFF": HVACAction.OFF,
     }
 
-    def __init__(self, hass, coordinator):
+    _attr_has_entity_name = True
+    _attr_name = "Climate"
+
+    def __init__(self, hass, coordinator, entry_id: str | None = None):
         super().__init__(coordinator)
 
         self.cts600 = coordinator.cts600
-        self._name = coordinator.name + " Climate Control"
-        self._attr_unique_id = f"serial-{self.cts600.port}-climate"
+        # Use entry_id for stable unique_id
+        self._attr_unique_id = f"{entry_id}-climate" if entry_id else f"{coordinator.name}-climate"
 
         self._state = None
         self._last_on_operation = None
@@ -72,12 +76,7 @@ class CTS600Climate(CoordinatorEntity, ClimateEntity):
             key="nilan_cts600", icon="mdi:hvac"
         )
         self._enable_turn_on_off_backwards_compatibility = False
-        _LOGGER.debug("nilan INIT %s -> %s", self._name, self.entity_id)
-
-    @property
-    def name(self):
-        """Return the name of the climate device."""
-        return self._name
+        _LOGGER.debug("nilan INIT %s -> %s", self._attr_name, self.entity_id)
 
     @property
     def min_temp(self):
