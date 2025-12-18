@@ -206,9 +206,14 @@ def decodeSlaveID(data, format=default_slave_id_format):
     return dict(zip([n for n, s in f], struct.unpack_from(fb(f), data)))
 
 
-def read_response(rawRecv):
-    """Parse a Nilan response packet from rawRecv, which is a function
-    that returns consequtive bytes.
+def read_response_tcp(rawRecv):
+    """Parse a Nilan response packet for Modbus TCP from rawRecv.
+    
+    Modbus TCP uses MBAP header (7 bytes):
+    - Transaction ID (2 bytes)
+    - Protocol ID (2 bytes) 
+    - Length (2 bytes)
+    - Unit ID (1 byte)
     """
     frame = []
 
@@ -253,11 +258,74 @@ def read_response(rawRecv):
         raise Exception(f"Unknown response op {op}")
 
     data = recv(data_size)
-    # computedCRC = FramerRTU.compute_CRC(bytes(frame))
-    # gotCRC = word16b(recv)
-    # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
-    # return op.name, parameters, data, gotCRC == computedCRC
     return op.name, parameters, data
+
+
+def read_response_rtu(rawRecv):
+    """Parse a Nilan response packet for Modbus RTU from rawRecv.
+    
+    Modbus RTU format:
+    - Slave ID (1 byte)
+    - Function Code (1 byte)
+    - Data (n bytes)
+    - CRC (2 bytes)
+    """
+    frame = []
+
+    def recv(n):
+        nonlocal frame
+        if n == 0:
+            return []
+        b = rawRecv(n)
+        if len(b) == 0:
+            raise TimeoutError
+        frame.extend(b)
+        return b
+
+    slave = word8(recv)
+    function_code = word8(recv)
+    try:
+        op = NilanOperators(function_code)
+    except ValueError:
+        raise NilanCTS600ProtocolError(
+            f"Received unknown function code: {function_code}"
+        )
+    parameters = ()
+    data_size = None
+
+    if op == NilanOperators.REPORT_SLAVE_ID:
+        data_size = word8(recv)
+    elif op in (NilanOperators.WI_RO_REGS, NilanOperators.WI_RO_BITS):
+        parameters = (word16(recv), word16(recv))
+        data_size = word16(recv)
+    elif op in (
+        NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS,
+        NilanOperators.READ_INPUT_REGISTERS,
+    ):
+        data_size = word8(recv)
+    elif op == NilanOperators.PRESET_SINGLE_REGISTER:
+        parameters = (word16(recv), word16(recv))
+        data_size = 0
+    else:
+        raise Exception(f"Unknown response op {op}")
+
+    data = recv(data_size)
+    
+    # Read and verify CRC
+    computedCRC = FramerRTU.compute_CRC(bytes(frame))
+    gotCRC = word16b(recv)
+    if gotCRC != computedCRC:
+        raise NilanCTS600ProtocolError(
+            f"CRC mismatch: expected {computedCRC:04x}, got {gotCRC:04x}"
+        )
+    
+    return op.name, parameters, data
+
+
+# Keep old name for backwards compatibility
+def read_response(rawRecv):
+    """Parse a Nilan response packet (TCP format) - deprecated, use read_response_tcp."""
+    return read_response_tcp(rawRecv)
 
 
 def _scanner_reset_menu():
@@ -410,12 +478,11 @@ class CTS600:
         """
         (reqOP, *args) = request if isinstance(request, tuple) else (request,)
         self.send(reqOP, requestFrame)
-        # (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
-        (ackOP, parameters, data) = read_response(self.client.recv)
-        # if not crcOK:
-        #     self.crc_fails += 1
-        #     self.log("CRC Fail: %s", request)
-        #     return False
+        # Use appropriate response parser based on connection type
+        if self.host:
+            (ackOP, parameters, data) = read_response_tcp(self.client.recv)
+        else:
+            (ackOP, parameters, data) = read_response_rtu(self.client.recv)
         handler = getattr(self, self._ack_handlers.get(ackOP, "None"), None)
         if handler:
             handler(ackOP, parameters, data, request=request)
@@ -423,28 +490,41 @@ class CTS600:
             self.log("Warning: No ack handler for op %s.", ackOP)
 
     def send(self, op, frame):
-        """Transmit OP to SELF.UNIT and then remaining FRAME."""
-        # MBAP Header for Modbus TCP: #
-        # Transaction ID (2 bytes) - can be 0
-        # Protocol ID (2 bytes) - always 0 for Modbus
-        # Length (2 bytes) - number of following bytes
-        # Unit ID (1 byte) - slave address
-        # Modbus PDU: #
-        # Function Code (1 byte)
-        # Data (n bytes)
-        length = 2 + len(frame)  # unit (1) + function code (1) + frame data
-        f = [
-            0,
-            0,
-            0,
-            0,
-            (length >> 8) & 0xFF,
-            length & 0xFF,
-            self.unit,
-            op.value,
-            *frame,
-        ]
-        # f = appendCRC(f)
+        """Transmit OP to SELF.UNIT and then remaining FRAME.
+        
+        Uses Modbus TCP (MBAP header) for TCP connections,
+        or Modbus RTU (with CRC) for serial connections.
+        """
+        if self.host:
+            # Modbus TCP: MBAP Header
+            # Transaction ID (2 bytes) - can be 0
+            # Protocol ID (2 bytes) - always 0 for Modbus
+            # Length (2 bytes) - number of following bytes
+            # Unit ID (1 byte) - slave address
+            # Function Code (1 byte)
+            # Data (n bytes)
+            length = 2 + len(frame)  # unit (1) + function code (1) + frame data
+            f = [
+                0, 0,  # Transaction ID
+                0, 0,  # Protocol ID
+                (length >> 8) & 0xFF, length & 0xFF,  # Length
+                self.unit,
+                op.value,
+                *frame,
+            ]
+        else:
+            # Modbus RTU: 
+            # Slave ID (1 byte)
+            # Function Code (1 byte)
+            # Data (n bytes)
+            # CRC (2 bytes)
+            f = [
+                self.unit,
+                op.value,
+                *frame,
+            ]
+            f = appendCRC(f)
+        
         return self.client.send(bytes(f))
 
     def ack_report_slave_id(self, op, parameters, data, request=None):
