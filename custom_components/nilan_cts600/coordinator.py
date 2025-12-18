@@ -23,7 +23,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util.unit_conversion import TemperatureConverter
 
-from .const import DATA_KEY, DOMAIN
+from .const import DATA_KEY, DOMAIN, CONNECTION_TYPE_TCP
 from .nilan_cts600 import (
     CTS600,
     Key,
@@ -52,21 +52,32 @@ async def getCoordinator(hass, config):
     async with _initLock:
         if DATA_KEY not in hass.data:
             hass.data[DATA_KEY] = {}
-        port = config.get("port")
-        if port == "auto":
-            port = findUSB()
-        if port in hass.data[DATA_KEY]:
-            return hass.data[DATA_KEY][port]
+        
+        connection_type = config.get("connection_type", CONNECTION_TYPE_TCP)
+        
+        # Determine the unique key for this connection
+        if connection_type == CONNECTION_TYPE_TCP:
+            host = config.get("host")
+            tcp_port = config.get("tcp_port", 502)
+            connection_key = f"tcp://{host}:{tcp_port}"
+        else:
+            port = config.get("port")
+            if port == "auto":
+                port = findUSB()
+            connection_key = port
+        
+        if connection_key in hass.data[DATA_KEY]:
+            return hass.data[DATA_KEY][connection_key]
 
-        _LOGGER.debug("Creating new coordinator for %s.", port)
-        coordinator = CTS600Coordinator(hass, port, config)
+        _LOGGER.debug("Creating new coordinator for %s.", connection_key)
+        coordinator = CTS600Coordinator(hass, config)
         try:
             await coordinator.initialize()
         except Exception as e:
-            _LOGGER.error("Device init failed for %s: %s", port, e)
+            _LOGGER.error("Device init failed for %s: %s", connection_key, e)
             raise PlatformNotReady
-        hass.data[DATA_KEY][port] = coordinator
-        _LOGGER.debug("Created new coordinator done for %s.", port)
+        hass.data[DATA_KEY][connection_key] = coordinator
+        _LOGGER.debug("Created new coordinator done for %s.", connection_key)
         return coordinator
 
 
@@ -80,17 +91,27 @@ class CTS600Coordinator(DataUpdateCoordinator):
     """
 
     def __init__(
-        self, hass, port, config
+        self, hass, config
     ):  # port, name, retries=1, sensor_entity_id=None):
         """Initialize my coordinator."""
 
-        # if not port:
-        #     raise PlatformNotReady
+        connection_type = config.get("connection_type", CONNECTION_TYPE_TCP)
+        
         try:
-            cts600 = CTS600(port=port, logger=_LOGGER.debug)
+            if connection_type == CONNECTION_TYPE_TCP:
+                host = config.get("host")
+                tcp_port = int(config.get("tcp_port", 502))
+                cts600 = CTS600(host=host, tcp_port=tcp_port, logger=_LOGGER.debug)
+                self._connection_info = f"tcp://{host}:{tcp_port}"
+            else:
+                port = config.get("port")
+                if port == "auto":
+                    port = findUSB()
+                cts600 = CTS600(port=port, logger=_LOGGER.debug)
+                self._connection_info = port
             cts600.connect()
         except Exception as e:
-            _LOGGER.error("Device connect failed for %s: %s", port, e)
+            _LOGGER.error("Device connect failed for %s: %s", config, e)
             raise PlatformNotReady
 
         super().__init__(

@@ -298,12 +298,31 @@ class CTS600:
     _slave_id_struct = default_slave_id_format
     remote_version = 0x5C
 
-    def __init__(self, port=None, client=None, unit=3, rows=2, columns=8, logger=None):
+    def __init__(self, port=None, host=None, tcp_port=502, client=None, unit=3, rows=2, columns=8, logger=None):
         self.port = port
-        # self.client = client or ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
-        self.client = ModbusTcpClient("192.168.7.240")
+        self.host = host
+        self.tcp_port = tcp_port
         self._logger = logger
         self.unit = unit
+        
+        # Create client based on connection type
+        if client:
+            self.client = client
+        elif host:
+            # TCP connection with timeout and retry settings
+            self.client = ModbusTcpClient(
+                host=host,
+                port=tcp_port,
+                timeout=10,  # 10 second timeout for read/write operations
+                retries=3,   # Retry failed requests
+                reconnect_delay=1,  # Wait 1 second before reconnecting
+            )
+        elif port:
+            # Serial connection
+            self.client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
+        else:
+            raise ValueError("Either 'host' (for TCP) or 'port' (for Serial) must be provided")
+        
         self.output_registers = [0] * 0x300
         self.output_bits = dict()
         self.crc_fails = 0
@@ -318,10 +337,16 @@ class CTS600:
         if self._logger:
             self._logger(fmt, *args)
 
+    def _connection_info(self):
+        """Return a string describing the connection for logging."""
+        if self.host:
+            return f"{self.host}:{self.tcp_port}"
+        return self.port or "unknown"
+
     def connect(self):
         """Connect to the Modbus device."""
         if not self.client.connect():
-            raise ConnectionException(f"Failed to connect to {self.port}")
+            raise ConnectionException(f"Failed to connect to {self._connection_info()}")
 
     def disconnect(self):
         """Close the connection to the Modbus device."""
@@ -333,10 +358,14 @@ class CTS600:
 
     def reconnect(self):
         """Reconnect to the Modbus device after a connection failure."""
-        self.log("Attempting to reconnect to %s", self.port)
+        self.log("Attempting to reconnect to %s", self._connection_info())
         self.disconnect()
+        # Small delay before reconnecting to allow the device to reset
+        time.sleep(0.5)
         if not self.client.connect():
-            raise ConnectionException(f"Reconnect failed to {self.port}")
+            raise ConnectionException(f"Reconnect failed to {self._connection_info()}")
+        # Small delay after connecting before sending commands
+        time.sleep(0.1)
         # Re-initialize after reconnect
         self.initialize()
 
