@@ -1,14 +1,23 @@
-
-import codecs, struct, time, os, re
+import codecs
 from enum import Enum
-from pymodbus.client import ModbusSerialClient
+import os
+import re
+import struct
+import time
+
+from pymodbus import FramerType
+from pymodbus.client import ModbusSerialClient, ModbusTcpClient
+from pymodbus.exceptions import ConnectionException
 from pymodbus.framer.rtu import FramerRTU
 
-class NilanCTS600Exception (Exception):
+
+class NilanCTS600Exception(Exception):
     pass
 
-class NilanCTS600ProtocolError (NilanCTS600Exception):
+
+class NilanCTS600ProtocolError(NilanCTS600Exception):
     pass
+
 
 class NilanOperators(Enum):
     READ_DISCRETE_INPUTS = 2
@@ -19,8 +28,10 @@ class NilanOperators(Enum):
     WI_RO_BITS = 65
     WI_RO_REGS = 66
 
-class Key (Enum):
-    """ A bitmap representing the console buttons. """
+
+class Key(Enum):
+    """A bitmap representing the console buttons."""
+
     NONE = 0x00
     ESC = 0x01
     UP = 0x02
@@ -29,97 +40,109 @@ class Key (Enum):
     OFF = 0x10
     ON = 0x20
 
-    def __int__ (self):
+    def __int__(self):
         return self.value
+
     def __add__(self, other):
         return self.value | int(other)
-    
-def word8 (recv, index=None):
+
+
+def word8(recv, index=None):
     if index is not None:
         return recv[index]
     else:
         return recv(1)[0]
-    
-def word16 (recv, index=None):
+
+
+def word16(recv, index=None):
     if index is not None:
-        return recv[index+0]*0x100+recv[index+1]
+        return recv[index + 0] * 0x100 + recv[index + 1]
     else:
-        return recv(1)[0]*0x100+recv(1)[0]
+        return recv(1)[0] * 0x100 + recv(1)[0]
 
-def word16b (recv):
-    return recv(1)[0]+recv(1)[0]*0x100
 
-def frame8 (x):
-    return [x & 0xff]
+def word16b(recv):
+    return recv(1)[0] + recv(1)[0] * 0x100
 
-def frame16 (x):
-    return [(x>>8) & 0xff, (x>>0) & 0xff]
 
-def frame (*args):
+def frame8(x):
+    return [x & 0xFF]
+
+
+def frame16(x):
+    return [(x >> 8) & 0xFF, (x >> 0) & 0xFF]
+
+
+def frame(*args):
     f = []
     for x in args:
         f.extend(x)
     return f
 
-def parseLastNumber (string):
-    return int (string.split()[-1], 10)
-    
-def parseCelsius (string):
-    """ Assuming STRING contains a number with a °C suffix, return that number. """
-    return parseLastNumber(string[0:string.find('°C')])
 
-def parseFlow (string):
-    """ Assuming STRING contains a number 1-4 delimited like >num<, return that number."""
-    flowText = re.findall ('>([1-4])<', string)
-    return int (flowText[0], 10) if flowText else None
+def parseLastNumber(string):
+    return int(string.split()[-1], 10)
 
-def findUSB (dev='/dev/'):
-    for ttyusb in filter(lambda x: re.search('^ttyUSB[0-9]*', x), os.listdir(dev)):
+
+def parseCelsius(string):
+    """Assuming STRING contains a number with a °C suffix, return that number."""
+    return parseLastNumber(string[0 : string.find("°C")])
+
+
+def parseFlow(string):
+    """Assuming STRING contains a number 1-4 delimited like >num<, return that number."""
+    flowText = re.findall(">([1-4])<", string)
+    return int(flowText[0], 10) if flowText else None
+
+
+def findUSB(dev="/dev/"):
+    for ttyusb in filter(lambda x: re.search("^ttyUSB[0-9]*", x), os.listdir(dev)):
         return dev + ttyusb
-    raise Exception ('No USB device found.')
+    raise Exception("No USB device found.")
 
-def cycleToMenuEnd (initText, cycler, maxTries=10, match=None):
-    """ Repeat CYCLER function until it returns the same string, or until it matches MATCH."""
-    if match and re.findall (match, initText):
+
+def cycleToMenuEnd(initText, cycler, maxTries=10, match=None):
+    """Repeat CYCLER function until it returns the same string, or until it matches MATCH."""
+    if match and re.findall(match, initText):
         return initText
     old_text = initText
     tries = 0
     while (new_text := cycler()) != old_text:
         # print (f'cycle: {new_text}')
-        if match and re.findall (match, new_text):
+        if match and re.findall(match, new_text):
             return new_text
         tries += 1
         if tries >= maxTries:
-            raise NilanCTS600Exception (f'Unable to cycle menu: {old_text} -> {new_text}')
+            raise NilanCTS600Exception(
+                f"Unable to cycle menu: {old_text} -> {new_text}"
+            )
         old_text = new_text
     if match:
         return False
     else:
         return old_text
 
-_nilanCodePage = {
-    8: 198,
-    9: 216,
-    10: 197,
-    11: 196,
-    12: 214,
-    13: 218,
-    223: 176 }
 
-def nilanString (buffer):
-    """ Decode binary buffer into a text string. """
-    return codecs.decode(bytes(map (lambda b: _nilanCodePage.get(b, b), buffer.replace (b'\x00', b''))),
-                         encoding='latin-1')
+_nilanCodePage = {8: 198, 9: 216, 10: 197, 11: 196, 12: 214, 13: 218, 223: 176}
 
-def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='}'):
+
+def nilanString(buffer):
+    """Decode binary buffer into a text string."""
+    return codecs.decode(
+        bytes(map(lambda b: _nilanCodePage.get(b, b), buffer.replace(b"\x00", b""))),
+        encoding="latin-1",
+    )
+
+
+def nilanStringApplyAttribute(string, attributeData, startBlink="{", endBlink="}"):
     """Apply string attribute, i.e. blinking, according to bits in
     attributeData. That is, if a number should blink, enclose it in
     curly brackets."""
     output = ""
     mode = 0
-    for i in range (0, len(string)):
-        bitPos = i*2
-        newMode = (attributeData[bitPos//8]>>(bitPos&0x7)) & 0x03
+    for i in range(0, len(string)):
+        bitPos = i * 2
+        newMode = (attributeData[bitPos // 8] >> (bitPos & 0x7)) & 0x03
         if newMode != mode:
             if newMode == 0x0:
                 output += endBlink
@@ -131,59 +154,127 @@ def nilanStringApplyAttribute (string, attributeData, startBlink='{', endBlink='
         output += endBlink
     return output
 
-def nilanADToCelsius (advalue, x=56.25):
-    """ Convert AD temperature sensor value to celsius. """
+
+def nilanADToCelsius(advalue, x=56.25):
+    """Convert AD temperature sensor value to celsius."""
     return x - (advalue * ((34 - 12) / (328 - 168)))
 
-def nilanCelsiusToAD (celsius, x=56.25):
-    """ Convert Celsius to AD temperature sensor value. """
-    return round ((x - celsius) / ((34 - 12) / (328 - 168)))
 
-def appendCRC (frame):
-    crc = FramerRTU.compute_CRC (frame)
-    return frame + [(crc>>0)&0xff, (crc>>8)&0xff]
+def nilanCelsiusToAD(celsius, x=56.25):
+    """Convert Celsius to AD temperature sensor value."""
+    return round((x - celsius) / ((34 - 12) / (328 - 168)))
+
+
+def appendCRC(frame):
+    crc = FramerRTU.compute_CRC(frame)
+    return frame + [(crc >> 0) & 0xFF, (crc >> 8) & 0xFF]
+
 
 default_slave_id_format = (
-    ('slaveID', 'B'),
-    ('runStatus', 'B'),
-    ('errorStatus', 'B'),
-    ('resetStatus', 'B'),
-    ('protocolVersion', 'B'),
-    ('softwareVersion', 'H'),
-    ('softwareDate', 'H'),
-    ('softwareTime', 'H'),
-    ('product', '10s'),
+    ("slaveID", "B"),
+    ("runStatus", "B"),
+    ("errorStatus", "B"),
+    ("resetStatus", "B"),
+    ("protocolVersion", "B"),
+    ("softwareVersion", "H"),
+    ("softwareDate", "H"),
+    ("softwareTime", "H"),
+    ("product", "10s"),
     ###
-    ('numofOutputBits', 'H'),
-    ('numofLEDs', 'H'),
-    ('numofInputBits', 'H'),
-    ('numofKeys', 'H'),
-    ('numofOutputRegisters', 'H'),
-    ('numofInputRegisters', 'H'),
-    ('reserved', '2s'),
-    ('numofActions', 'H'),
-    ('displayRows', 'H'),
-    ('displayColumns', 'H'),
-    ('displayType', 'B'),
-    ('displayDataType', 'B'))
+    ("numofOutputBits", "H"),
+    ("numofLEDs", "H"),
+    ("numofInputBits", "H"),
+    ("numofKeys", "H"),
+    ("numofOutputRegisters", "H"),
+    ("numofInputRegisters", "H"),
+    ("reserved", "2s"),
+    ("numofActions", "H"),
+    ("displayRows", "H"),
+    ("displayColumns", "H"),
+    ("displayType", "B"),
+    ("displayDataType", "B"),
+)
 
-def decodeSlaveID (data, format = default_slave_id_format):
+
+def decodeSlaveID(data, format=default_slave_id_format):
     def fb(fmt):
-        return '!' + ''.join([s for n,s in fmt])
+        return "!" + "".join([s for n, s in fmt])
+
     f = format
-    while f and (struct.calcsize (fb(f)) > len(data)):
-        f = f[:-1] # decrease struct format if there's not enough data
-    return dict (zip ([n for n,s in f], struct.unpack_from(fb(f), data)))
+    while f and (struct.calcsize(fb(f)) > len(data)):
+        f = f[:-1]  # decrease struct format if there's not enough data
+    return dict(zip([n for n, s in f], struct.unpack_from(fb(f), data)))
 
 
-def read_response (rawRecv):
-    """ Parse a Nilan response packet from rawRecv, which is a function
-    that returns consequtive bytes.
+def read_response_tcp(rawRecv):
+    """Parse a Nilan response packet for Modbus TCP from rawRecv.
+    
+    Modbus TCP uses MBAP header (7 bytes):
+    - Transaction ID (2 bytes)
+    - Protocol ID (2 bytes) 
+    - Length (2 bytes)
+    - Unit ID (1 byte)
     """
     frame = []
-    def recv (n):
+
+    def recv(n):
         nonlocal frame
-        if n==0:
+        if n == 0:
+            return []
+        b = rawRecv(n)
+        if len(b) == 0:
+            raise TimeoutError
+        frame.extend(b)
+        return b
+
+    word16b(recv)  # discard transaction ID
+    word16b(recv)  # discard protocol ID
+    word16b(recv)  # discard length
+    slave = word8(recv)
+    function_code = word8(recv)
+    try:
+        op = NilanOperators(function_code)
+    except ValueError:
+        raise NilanCTS600ProtocolError(
+            f"Received unknown function code: {function_code}"
+        )
+    parameters = ()
+    data_size = None
+
+    if op == NilanOperators.REPORT_SLAVE_ID:
+        data_size = word8(recv)
+    elif op in (NilanOperators.WI_RO_REGS, NilanOperators.WI_RO_BITS):
+        parameters = (word16(recv), word16(recv))
+        data_size = word16(recv)
+    elif op in (
+        NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS,
+        NilanOperators.READ_INPUT_REGISTERS,
+    ):
+        data_size = word8(recv)
+    elif op == NilanOperators.PRESET_SINGLE_REGISTER:
+        parameters = (word16(recv), word16(recv))
+        data_size = 0
+    else:
+        raise Exception(f"Unknown response op {op}")
+
+    data = recv(data_size)
+    return op.name, parameters, data
+
+
+def read_response_rtu(rawRecv):
+    """Parse a Nilan response packet for Modbus RTU from rawRecv.
+    
+    Modbus RTU format:
+    - Slave ID (1 byte)
+    - Function Code (1 byte)
+    - Data (n bytes)
+    - CRC (2 bytes)
+    """
+    frame = []
+
+    def recv(n):
+        nonlocal frame
+        if n == 0:
             return []
         b = rawRecv(n)
         if len(b) == 0:
@@ -196,64 +287,110 @@ def read_response (rawRecv):
     try:
         op = NilanOperators(function_code)
     except ValueError:
-        raise NilanCTS600ProtocolError (f"Received unknown function code: {function_code}")
+        raise NilanCTS600ProtocolError(
+            f"Received unknown function code: {function_code}"
+        )
     parameters = ()
     data_size = None
-    
-    if (op == NilanOperators.REPORT_SLAVE_ID):
+
+    if op == NilanOperators.REPORT_SLAVE_ID:
         data_size = word8(recv)
-    elif (op in (NilanOperators.WI_RO_REGS, NilanOperators.WI_RO_BITS)):
+    elif op in (NilanOperators.WI_RO_REGS, NilanOperators.WI_RO_BITS):
         parameters = (word16(recv), word16(recv))
         data_size = word16(recv)
-    elif (op in (NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS, NilanOperators.READ_INPUT_REGISTERS)):
+    elif op in (
+        NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS,
+        NilanOperators.READ_INPUT_REGISTERS,
+    ):
         data_size = word8(recv)
-    elif (op == NilanOperators.PRESET_SINGLE_REGISTER):
+    elif op == NilanOperators.PRESET_SINGLE_REGISTER:
         parameters = (word16(recv), word16(recv))
         data_size = 0
     else:
         raise Exception(f"Unknown response op {op}")
 
     data = recv(data_size)
+    
+    # Read and verify CRC
     computedCRC = FramerRTU.compute_CRC(bytes(frame))
     gotCRC = word16b(recv)
-    # print(f'ACK: {op} : {parameters} : {data} : {gotCRC:04x} : {computedCRC:04x}')
-    return op.name, parameters, data, gotCRC == computedCRC
+    if gotCRC != computedCRC:
+        raise NilanCTS600ProtocolError(
+            f"CRC mismatch: expected {computedCRC:04x}, got {gotCRC:04x}"
+        )
+    
+    return op.name, parameters, data
 
-def _scanner_reset_menu ():
-    """ Keep hittin ESC until nothing more happens. """
-    return [ (Key.ESC,""), {'regexp': '.*'}]
 
-def _scanner_search_menu (action, regexp):
-    """ Do action until regexp matches. """
-    return [ (action,""), dict(regexp=regexp, stop=True), dict(regexp='.*') ]
+# Keep old name for backwards compatibility
+def read_response(rawRecv):
+    """Parse a Nilan response packet (TCP format) - deprecated, use read_response_tcp."""
+    return read_response_tcp(rawRecv)
 
-def _scanner_top_display ():
+
+def _scanner_reset_menu():
+    """Keep hittin ESC until nothing more happens."""
+    return [(Key.ESC, ""), {"regexp": ".*"}]
+
+
+def _scanner_search_menu(action, regexp):
+    """Do action until regexp matches."""
+    return [(action, ""), dict(regexp=regexp, stop=True), dict(regexp=".*")]
+
+
+def _scanner_top_display():
     f = dict
     return [
-        f (regexp=r"(?P<value>.*)", var='display', parse=lambda d: d.replace ('/', '\n')),
-        f (regexp=r".*>\d< (?P<value>\d+)°C", var='thermostat', parse=int, kind='temperature'),
-        f (regexp=r"^(?P<value>\w+)", var='mode'),
-        f (regexp=r"^\w+\s+(?P<value>\w)", var='program', default=None),
-        f (regexp=r".*>(?P<value>\d+)<", var='flow', parse=int)
+        f(regexp=r"(?P<value>.*)", var="display", parse=lambda d: d.replace("/", "\n")),
+        f(
+            regexp=r".*>\d< (?P<value>\d+)°C",
+            var="thermostat",
+            parse=int,
+            kind="temperature",
+        ),
+        f(regexp=r"^(?P<value>\w+)", var="mode"),
+        f(regexp=r"^\w+\s+(?P<value>\w)", var="program", default=None),
+        f(regexp=r".*>(?P<value>\d+)<", var="flow", parse=int),
     ]
+
 
 class CTS600:
     _ack_handlers = {
-        'REPORT_SLAVE_ID': 'ack_report_slave_id',
-        'READ_MULTIPLE_HOLDING_REGISTERS': 'ack_read_multiple_holding_registers',
-        'READ_INPUT_REGISTERS': 'ack_read_multiple_holding_registers',
-        'PRESET_SINGLE_REGISTER': 'ack_preset_single_register',
-        'WI_RO_REGS': 'ack_wi_ro_regs',
-        'WI_RO_BITS': 'ack_wi_ro_bits'
-        }
+        "REPORT_SLAVE_ID": "ack_report_slave_id",
+        "READ_MULTIPLE_HOLDING_REGISTERS": "ack_read_multiple_holding_registers",
+        "READ_INPUT_REGISTERS": "ack_read_multiple_holding_registers",
+        "PRESET_SINGLE_REGISTER": "ack_preset_single_register",
+        "WI_RO_REGS": "ack_wi_ro_regs",
+        "WI_RO_BITS": "ack_wi_ro_bits",
+    }
     _slave_id_struct = default_slave_id_format
-    remote_version = 0x5c
-        
-    def __init__(self, port=None, client=None, unit=3, rows=2, columns=8, logger=None):
+    remote_version = 0x5C
+
+    def __init__(self, port=None, host=None, tcp_port=502, client=None, unit=3, rows=2, columns=8, logger=None):
         self.port = port
-        self.client = client or ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
+        self.host = host
+        self.tcp_port = tcp_port
         self._logger = logger
         self.unit = unit
+        
+        # Create client based on connection type
+        if client:
+            self.client = client
+        elif host:
+            # TCP connection with timeout and retry settings
+            self.client = ModbusTcpClient(
+                host=host,
+                port=tcp_port,
+                timeout=10,  # 10 second timeout for read/write operations
+                retries=3,   # Retry failed requests
+                reconnect_delay=1,  # Wait 1 second before reconnecting
+            )
+        elif port:
+            # Serial connection
+            self.client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
+        else:
+            raise ValueError("Either 'host' (for TCP) or 'port' (for Serial) must be provided")
+        
         self.output_registers = [0] * 0x300
         self.output_bits = dict()
         self.crc_fails = 0
@@ -264,41 +401,75 @@ class CTS600:
         self.metaData = {}
         self._t15_adtemp = None
 
-    def log (self, fmt, *args):
+    def log(self, fmt, *args):
         if self._logger:
             self._logger(fmt, *args)
-        
-    def connect (self):
-        self.client.connect()
-        
-    def slaveID (self):
-        return decodeSlaveID (self.slave_id_data, self._slave_id_struct)
-        
-    def read_holding_registers (self, address, count):
-        self.doRequest ((NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS, address, count),
-                        frame (frame16 (address),
-                               frame16 (count)))
 
-    def read_input_registers (self, address, count):
-        self.doRequest ((NilanOperators.READ_INPUT_REGISTERS, address, count),
-                        frame (frame16 (address),
-                               frame16 (count)))
-        
-    def preset_single_register (self, address, value):
-        self.doRequest (
+    def _connection_info(self):
+        """Return a string describing the connection for logging."""
+        if self.host:
+            return f"{self.host}:{self.tcp_port}"
+        return self.port or "unknown"
+
+    def connect(self):
+        """Connect to the Modbus device."""
+        if not self.client.connect():
+            raise ConnectionException(f"Failed to connect to {self._connection_info()}")
+
+    def disconnect(self):
+        """Close the connection to the Modbus device."""
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass  # Ignore errors during disconnect
+
+    def reconnect(self):
+        """Reconnect to the Modbus device after a connection failure."""
+        self.log("Attempting to reconnect to %s", self._connection_info())
+        self.disconnect()
+        # Small delay before reconnecting to allow the device to reset
+        time.sleep(0.5)
+        if not self.client.connect():
+            raise ConnectionException(f"Reconnect failed to {self._connection_info()}")
+        # Small delay after connecting before sending commands
+        time.sleep(0.1)
+        # Re-initialize after reconnect
+        self.initialize()
+
+    def slaveID(self):
+        return decodeSlaveID(self.slave_id_data, self._slave_id_struct)
+
+    def read_holding_registers(self, address, count):
+        self.doRequest(
+            (NilanOperators.READ_MULTIPLE_HOLDING_REGISTERS, address, count),
+            frame(frame16(address), frame16(count)),
+        )
+
+    def read_input_registers(self, address, count):
+        self.doRequest(
+            (NilanOperators.READ_INPUT_REGISTERS, address, count),
+            frame(frame16(address), frame16(count)),
+        )
+
+    def preset_single_register(self, address, value):
+        self.doRequest(
             (NilanOperators.PRESET_SINGLE_REGISTER, address, value),
-            frame (frame16 (address),
-                   frame16 (value)))
+            frame(frame16(address), frame16(value)),
+        )
 
-    def wi_ro_regs (self, address, *values):
-        self.doRequest (
+    def wi_ro_regs(self, address, *values):
+        self.doRequest(
             (NilanOperators.WI_RO_REGS, address, values),
-            frame (frame16 (address),
-                   frame16 (len (values)),
-                   frame16 (2*len (values)),
-                   *map (frame16, values)))
-        
-    def doRequest (self, request, requestFrame=[]):
+            frame(
+                frame16(address),
+                frame16(len(values)),
+                frame16(2 * len(values)),
+                *map(frame16, values),
+            ),
+        )
+
+    def doRequest(self, request, requestFrame=[]):
         """Transmit a request and receive and process a response.  The
         request is sent to SELF.UNIT and the function-code is the
         first element of the REQUEST argument. Then REQUESTFRAME is
@@ -307,93 +478,129 @@ class CTS600:
         """
         (reqOP, *args) = request if isinstance(request, tuple) else (request,)
         self.send(reqOP, requestFrame)
-        (ackOP, parameters, data, crcOK) = read_response(self.client.recv)
-        if (not crcOK):
-            self.crc_fails += 1
-            self.log ('CRC Fail: %s', request)
-            return False
-        handler = getattr(self, self._ack_handlers.get(ackOP, 'None'), None)
+        # Use appropriate response parser based on connection type
+        if self.host:
+            (ackOP, parameters, data) = read_response_tcp(self.client.recv)
+        else:
+            (ackOP, parameters, data) = read_response_rtu(self.client.recv)
+        handler = getattr(self, self._ack_handlers.get(ackOP, "None"), None)
         if handler:
             handler(ackOP, parameters, data, request=request)
         else:
             self.log("Warning: No ack handler for op %s.", ackOP)
-    
-    def send (self, op, frame):
-        """Transmit OP to SELF.UNIT and then remaining FRAME."""
-        f = [self.unit, op.value] + frame
-        f = appendCRC(f)
+
+    def send(self, op, frame):
+        """Transmit OP to SELF.UNIT and then remaining FRAME.
+        
+        Uses Modbus TCP (MBAP header) for TCP connections,
+        or Modbus RTU (with CRC) for serial connections.
+        """
+        if self.host:
+            # Modbus TCP: MBAP Header
+            # Transaction ID (2 bytes) - can be 0
+            # Protocol ID (2 bytes) - always 0 for Modbus
+            # Length (2 bytes) - number of following bytes
+            # Unit ID (1 byte) - slave address
+            # Function Code (1 byte)
+            # Data (n bytes)
+            length = 2 + len(frame)  # unit (1) + function code (1) + frame data
+            f = [
+                0, 0,  # Transaction ID
+                0, 0,  # Protocol ID
+                (length >> 8) & 0xFF, length & 0xFF,  # Length
+                self.unit,
+                op.value,
+                *frame,
+            ]
+        else:
+            # Modbus RTU: 
+            # Slave ID (1 byte)
+            # Function Code (1 byte)
+            # Data (n bytes)
+            # CRC (2 bytes)
+            f = [
+                self.unit,
+                op.value,
+                *frame,
+            ]
+            f = appendCRC(f)
+        
         return self.client.send(bytes(f))
 
-    def ack_report_slave_id (self, op, parameters, data, request=None):
+    def ack_report_slave_id(self, op, parameters, data, request=None):
         self.slave_id_data = data
 
-    def ack_read_multiple_holding_registers (self, op, parameters, data, request=None):
+    def ack_read_multiple_holding_registers(self, op, parameters, data, request=None):
         (reqOP, address, count) = request or (None, None)
         if address is not None and count is not None:
-            values = [word16(data, i*2) for i in range(0, count)]
+            values = [word16(data, i * 2) for i in range(0, count)]
             a = address
             for v in values:
                 self.output_registers[a] = v
                 a += 2
 
-    def ack_preset_single_register (self, op, parameters, data, request=None):
-        if (request and (request != (NilanOperators.PRESET_SINGLE_REGISTER, *parameters))):
-            self.log ("ack_preset_single_register mismatch: %s -> %s", request, parameters)
+    def ack_preset_single_register(self, op, parameters, data, request=None):
+        if request and (
+            request != (NilanOperators.PRESET_SINGLE_REGISTER, *parameters)
+        ):
+            self.log(
+                "ack_preset_single_register mismatch: %s -> %s", request, parameters
+            )
 
-    def ack_wi_ro_regs (self, op, parameters, data, request=None):
+    def ack_wi_ro_regs(self, op, parameters, data, request=None):
         (address, count) = parameters
         # print (f'ack_wi_ro_regs: {parameters} : {data}')
         for i in range(0, len(data)):
-            self.output_registers[address+i] = word8(data, i)
+            self.output_registers[address + i] = word8(data, i)
 
-    def ack_wi_ro_bits (self, op, parameters, data, request):
+    def ack_wi_ro_bits(self, op, parameters, data, request):
         (address, bitCount) = parameters
         # print (f'ack_wi_ro_bits: {parameters} : {data}')
-        for i in range (0, len(data)):
-            self.output_bits[address+i] = data[i]
+        for i in range(0, len(data)):
+            self.output_bits[address + i] = data[i]
 
-    def initialize (self):
+    def initialize(self):
         self.doRequest(NilanOperators.REPORT_SLAVE_ID)
-        self.read_holding_registers (0x102, 1)
-        self.preset_single_register (0x104, self.remote_version)
-        
-    def key (self, key=Key.NONE):
+        self.read_holding_registers(0x102, 1)
+        self.preset_single_register(0x104, self.remote_version)
+
+    def key(self, key=Key.NONE):
         """Transmit a keypress message to CTS600. KEY is a bitmap of
         the keys pressed. CTS600 will respond with more or less random
         register updates, and a zero KEY bitmap is effectively a
         generic request for state update from CTS600.
 
         """
-        keycode = int (key) if key else 0
-        self.wi_ro_regs (0x100, keycode)
+        keycode = int(key) if key else 0
+        self.wi_ro_regs(0x100, keycode)
         if keycode != 0:
-            self.wi_ro_regs (0x100, keycode)
-            self.wi_ro_regs (0x100, 0)
+            self.wi_ro_regs(0x100, keycode)
+            self.wi_ro_regs(0x100, 0)
         return self.display()
 
-    def key_esc (self):
-        return self.key (Key.ESC)
-    
-    def key_up (self, repeat=1):
-        for _ in range (repeat-1):
-            self.key (Key.UP)
+    def key_esc(self):
+        return self.key(Key.ESC)
+
+    def key_up(self, repeat=1):
+        for _ in range(repeat - 1):
+            self.key(Key.UP)
         return self.key(Key.UP)
 
-    def key_down (self, repeat=1):
-        for _ in range(repeat-1):
-            self.key (Key.DOWN)
+    def key_down(self, repeat=1):
+        for _ in range(repeat - 1):
+            self.key(Key.DOWN)
         return self.key(Key.DOWN)
 
-    def key_enter (self):
-        return self.key (Key.ENTER)
+    def key_enter(self):
+        return self.key(Key.ENTER)
 
-    def key_off (self):
-        return self.key (Key.OFF)
+    def key_off(self):
+        return self.key(Key.OFF)
 
-    def key_on (self):
-        return self.key (Key.ON)
+    def key_on(self):
+        return self.key(Key.ON)
 
-    def displayRow (self, row, startBlink='{', endBlink='}'):
+    def displayRow(self, row, startBlink="{", endBlink="}"):
         """Construct a string representation of the CTS600 display's
         row number ROW.  Any text that should be blinking is put
         inside curly brackets.
@@ -401,77 +608,93 @@ class CTS600:
         NB: Will not query CTS600 for updated data.
 
         """
-        bytesPerRow = self.columns + int(self.columns/4)
-        startRegister = 0x200 + row*bytesPerRow
+        bytesPerRow = self.columns + int(self.columns / 4)
+        startRegister = 0x200 + row * bytesPerRow
         return nilanStringApplyAttribute(
-            nilanString(bytes(self.output_registers[startRegister:startRegister+self.columns])),
-            self.output_registers[startRegister+self.columns:startRegister+bytesPerRow],
+            nilanString(
+                bytes(
+                    self.output_registers[startRegister : startRegister + self.columns]
+                )
+            ),
+            self.output_registers[
+                startRegister + self.columns : startRegister + bytesPerRow
+            ],
             startBlink=startBlink,
-            endBlink=endBlink)
-    
-    def display (self, newline='/'):
-        return newline.join ([self.displayRow (r).strip() for r in range (0, self.rows)])
+            endBlink=endBlink,
+        )
 
-    def led (self):
+    def display(self, newline="/"):
+        return newline.join([self.displayRow(r).strip() for r in range(0, self.rows)])
+
+    def led(self):
         if 0x100 in self.output_bits:
-            return ['off', 'on', 'unknown', 'blink'][self.output_bits[0x100] & 0x03]
+            return ["off", "on", "unknown", "blink"][self.output_bits[0x100] & 0x03]
         else:
-            return 'unknown'
+            return "unknown"
 
-    def resetMenu (self, maxTries=10):
-        """ Put CTS600 in default state, by pressing ESC sufficiently many times. """
-        self.scanMenu ([_scanner_reset_menu()])
+    def resetMenu(self, maxTries=10):
+        """Put CTS600 in default state, by pressing ESC sufficiently many times."""
+        self.scanMenu([_scanner_reset_menu()])
         return self.display()
 
-    def scanMenu (self, menu_spec, data=None, meta_data=None):
+    def scanMenu(self, menu_spec, data=None, meta_data=None):
         """Cycle through the CTS600 menu and record the relevant
         values, according to the structure specified in MENU_SPEC.
 
         """
         data = data or dict()
         metaData = meta_data or dict()
-        translate_var = str.maketrans ("/", " ", "<>")
-        
-        def record_matching_entry (m, e, prefix=""):
-            """ Local utility, record regexp match M for entry E. """
-            if 'var' in m:
-                variable_key = "_".join(m['var'].translate(translate_var).split())
-            elif 'var' in e:
-                variable_key = e['var']
+        translate_var = str.maketrans("/", " ", "<>")
+
+        def record_matching_entry(m, e, prefix=""):
+            """Local utility, record regexp match M for entry E."""
+            if "var" in m:
+                variable_key = "_".join(m["var"].translate(translate_var).split())
+            elif "var" in e:
+                variable_key = e["var"]
             else:
                 return
-            if variable_key and 'value' in m:
+            if variable_key and "value" in m:
                 variable_key = prefix + variable_key
-                data[variable_key] = e['parse'] (m['value']) if 'parse' in e else m['value']
+                data[variable_key] = (
+                    e["parse"](m["value"]) if "parse" in e else m["value"]
+                )
                 metaData[variable_key] = dict()
-                if 'description' in m:
-                    metaData[variable_key]['description'] = m['description']
-                if 'kind' in e:
-                    metaData[variable_key]['kind'] = e['kind']
+                if "description" in m:
+                    metaData[variable_key]["description"] = m["description"]
+                if "kind" in e:
+                    metaData[variable_key]["kind"] = e["kind"]
 
-        def run_action (action):
-            return self.key (action) if isinstance (action, Key) else action()
-                
-        def scanSequence (menu_spec_sequence):
-            """ Match entries one after the next. """
+        def run_action(action):
+            return self.key(action) if isinstance(action, Key) else action()
+
+        def scanSequence(menu_spec_sequence):
+            """Match entries one after the next."""
             for e in menu_spec_sequence:
-                if isinstance (e, list):
-                    scanParallell (e[1:], e[0][0], e[0][1])
-                elif isinstance (e, dict):
-                    display = run_action(e['display']) if 'display' in e else self.display()
+                if isinstance(e, list):
+                    scanParallell(e[1:], e[0][0], e[0][1])
+                elif isinstance(e, dict):
+                    display = (
+                        run_action(e["display"]) if "display" in e else self.display()
+                    )
                     # print (f"scan: {e}, disp {display}")
-                    if 'regexp' in e:
-                        if not (match := re.match (e['regexp'], display)) and ('default' not in e):
-                            break # Stop sequence at first mismatch
+                    if "regexp" in e:
+                        if not (match := re.match(e["regexp"], display)) and (
+                            "default" not in e
+                        ):
+                            break  # Stop sequence at first mismatch
                         else:
-                            record_matching_entry (match.groupdict() if match else { 'value': e['default'] }, e)
-                            if 'gonext' in e:
-                                run_action(e['gonext'])
+                            record_matching_entry(
+                                match.groupdict() if match else {"value": e["default"]},
+                                e,
+                            )
+                            if "gonext" in e:
+                                run_action(e["gonext"])
                 else:
-                    run_action (e)
- 
-        def scanParallell (menu_spec_parallell, gonext, var_prefix=""):
-            """ Match any entry until display doesn't change or matching entry says to stop. """
+                    run_action(e)
+
+        def scanParallell(menu_spec_parallell, gonext, var_prefix=""):
+            """Match any entry until display doesn't change or matching entry says to stop."""
             previous_display = None
             display = self.display()
             stopped = False
@@ -480,15 +703,18 @@ class CTS600:
                 # print (f"psearch: {display}")
                 next_gonext = gonext
                 for e in menu_spec_parallell:
-                    if not 'regexp' in e:
-                        raise Exception (f"Parallell menu_spec missing regexp: %s", menu_spec_parallell)
-                    if match := re.match (e['regexp'], display):
-                        next_gonext = e.get ('gonext', gonext)
-                        record_matching_entry (match.groupdict(), e, var_prefix)
-                        if e.get ('stop', False):
+                    if not "regexp" in e:
+                        raise Exception(
+                            f"Parallell menu_spec missing regexp: %s",
+                            menu_spec_parallell,
+                        )
+                    if match := re.match(e["regexp"], display):
+                        next_gonext = e.get("gonext", gonext)
+                        record_matching_entry(match.groupdict(), e, var_prefix)
+                        if e.get("stop", False):
                             stopped = True
-                        if 'then' in e:
-                            scanSequence (e['then'])
+                        if "then" in e:
+                            scanSequence(e["then"])
                         break
                 else:
                     # print (f'Parallell no match for {display}')
@@ -496,284 +722,352 @@ class CTS600:
                 if not stopped:
                     previous_display = display
                     display = run_action(next_gonext)
-        scanSequence (menu_spec)
+
+        scanSequence(menu_spec)
         return data, metaData
 
-    def updateDisplay (self):
-        """ Scan whatever info is in the display, assuming it's the default top display text. """
-        scanData, scanMetaData = self.scanMenu (_scanner_top_display(), data=self.data.copy(), meta_data = self.metaData.copy())
+    def updateDisplay(self):
+        """Scan whatever info is in the display, assuming it's the default top display text."""
+        scanData, scanMetaData = self.scanMenu(
+            _scanner_top_display(),
+            data=self.data.copy(),
+            meta_data=self.metaData.copy(),
+        )
         self.data = scanData
         self.metaData = scanMetaData
-        self.data['led'] = self.led()
-        
-    def scanData (self, updateShowData=True, updateAllData=False):
-        """ Scan the main display and "SHOW DATA" menu and record the relevant operating parameters.
-        """
+        self.data["led"] = self.led()
+
+    def scanData(self, updateShowData=True, updateAllData=False):
+        """Scan the main display and "SHOW DATA" menu and record the relevant operating parameters."""
         f = dict
-        scan_menu = [ _scanner_reset_menu() ] + _scanner_top_display ()
+        scan_menu = [_scanner_reset_menu()] + _scanner_top_display()
         if updateShowData:
             show_data = [
-                f (display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
-                [ (Key.DOWN, ""),
-                  f (regexp=r"STATUS/(?P<value>.*)", var='status'),
-                  # Match any temperature sensor like T5:
-                  f (regexp=r"(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$", parse=int, kind='temperature'),
-                  # Match any flow value:
-                  f (regexp=r"(?P<var>.*/FLOW)\s+(?P<value>\d+)", parse=int, kind='flow'),
-                 ],
+                f(display=Key.UP, regexp="SHOW/DATA", gonext=self.key_enter),
+                [
+                    (Key.DOWN, ""),
+                    f(regexp=r"STATUS/(?P<value>.*)", var="status"),
+                    # Match any temperature sensor like T5:
+                    f(
+                        regexp=r"(?P<description>.*)/(?P<var>T\d+)\s+(?P<value>\d+)°C$",
+                        parse=int,
+                        kind="temperature",
+                    ),
+                    # Match any flow value:
+                    f(
+                        regexp=r"(?P<var>.*/FLOW)\s+(?P<value>\d+)",
+                        parse=int,
+                        kind="flow",
+                    ),
+                ],
             ]
             if updateAllData:
                 show_data[1] += [
                     # Match any software version:
-                    f (regexp=r"(?P<var>SOFTWARE.*/\w*)\s*(?P<value>\S+)\s*"),
+                    f(regexp=r"(?P<var>SOFTWARE.*/\w*)\s*(?P<value>\S+)\s*"),
                     # Finally, match any variable/value on separate lines:
-                    f (regexp=r"(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
+                    f(regexp=r"(?P<var>.*)/\s*(?P<value>.*\w)\s*"),
                 ]
             scan_menu += show_data
-        scanData, scanMetaData = self.scanMenu (scan_menu, data=self.data.copy(), meta_data = self.metaData.copy())
-        scanData['led'] = self.led()
+        scanData, scanMetaData = self.scanMenu(
+            scan_menu, data=self.data.copy(), meta_data=self.metaData.copy()
+        )
+        scanData["led"] = self.led()
         self.data = scanData
         self.metaData = scanMetaData
         return self.data
 
-    def updateData (self, updateDisplayData):
-        return self.scanData (updateShowData = updateDisplayData)
-        
-    def scanCooling (self):
-        """ Scan the COOLING menu """
-        def intOrOff (x):
-            return int(x) if x != 'OFF' else None
-                
+    def updateData(self, updateDisplayData):
+        return self.scanData(updateShowData=updateDisplayData)
+
+    def scanCooling(self):
+        """Scan the COOLING menu"""
+
+        def intOrOff(x):
+            return int(x) if x != "OFF" else None
+
         f = dict
-        return self.scanMenu ([
-            _scanner_reset_menu(),
-            _scanner_search_menu (Key.DOWN, "COOLING"),
-            Key.ENTER,
-            [ (Key.DOWN, ""),
-              f (regexp=r"TEMP.*/SET\s*(?P<value>\S+)", var='coolingTemp', parse=intOrOff),
-              f (regexp=r"VENT.*/HIGH\s+(?P<value>\w+)", var='coolingVentilationHigh', parse=intOrOff)
-             ]
-        ])
-    
-    def scanServiceMenu (self):
-        """ Requires that service menu is enabled. """
+        return self.scanMenu(
+            [
+                _scanner_reset_menu(),
+                _scanner_search_menu(Key.DOWN, "COOLING"),
+                Key.ENTER,
+                [
+                    (Key.DOWN, ""),
+                    f(
+                        regexp=r"TEMP.*/SET\s*(?P<value>\S+)",
+                        var="coolingTemp",
+                        parse=intOrOff,
+                    ),
+                    f(
+                        regexp=r"VENT.*/HIGH\s+(?P<value>\w+)",
+                        var="coolingVentilationHigh",
+                        parse=intOrOff,
+                    ),
+                ],
+            ]
+        )
+
+    def scanServiceMenu(self):
+        """Requires that service menu is enabled."""
         f = dict
-        return self.scanMenu ([
-            _scanner_reset_menu(),
-            _scanner_search_menu (Key.DOWN, "SERVICE"),
-            Key.ENTER,
-            [ (Key.DOWN, ""),
-              f (regexp=r"AIR/EXCHANGE",
-                 then=[ Key.ENTER,
-                        [ (Key.DOWN, "AIR_"),
-                          f (regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)%", parse=int, kind='%'),
-                          f (regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)", parse=int),
-                          f (regexp=r".*")
-                         ],
-                        Key.ESC]),
-              f (regexp=r"DEFROST",
-                 then=[ Key.ENTER,
-                        [ (Key.NONE, "DEFROST_"),
-                          f (regexp=r"(?P<var>.+?)(?P<value>[\w.]+)$")
-                         ],
-                        Key.ESC
-                       ]
-                 ),
-              f (regexp=r".*")
-             ]
-        ])
-    
-    def setThermostat (self, celsius):
-        """ Set thermostat to CELSIUS degrees. """
-        def getBlinkText (string):
-            return string[string.find('{')+1:string.find('}')].strip()
+        return self.scanMenu(
+            [
+                _scanner_reset_menu(),
+                _scanner_search_menu(Key.DOWN, "SERVICE"),
+                Key.ENTER,
+                [
+                    (Key.DOWN, ""),
+                    f(
+                        regexp=r"AIR/EXCHANGE",
+                        then=[
+                            Key.ENTER,
+                            [
+                                (Key.DOWN, "AIR_"),
+                                f(
+                                    regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)%",
+                                    parse=int,
+                                    kind="%",
+                                ),
+                                f(
+                                    regexp=r"(?P<var>[\w/<>]+)\s+(?P<value>\d+)",
+                                    parse=int,
+                                ),
+                                f(regexp=r".*"),
+                            ],
+                            Key.ESC,
+                        ],
+                    ),
+                    f(
+                        regexp=r"DEFROST",
+                        then=[
+                            Key.ENTER,
+                            [
+                                (Key.NONE, "DEFROST_"),
+                                f(regexp=r"(?P<var>.+?)(?P<value>[\w.]+)$"),
+                            ],
+                            Key.ESC,
+                        ],
+                    ),
+                    f(regexp=r".*"),
+                ],
+            ]
+        )
+
+    def setThermostat(self, celsius):
+        """Set thermostat to CELSIUS degrees."""
+
+        def getBlinkText(string):
+            return string[string.find("{") + 1 : string.find("}")].strip()
 
         if not 5 <= celsius <= 30:
-            raise Exception (f'Illegal thermostat value: {celsius}')
+            raise Exception(f"Illegal thermostat value: {celsius}")
 
         currentThermostat = parseCelsius(self.resetMenu())
-        if f'{currentThermostat}' != getBlinkText (self.key_enter()):
+        if f"{currentThermostat}" != getBlinkText(self.key_enter()):
             x = self.key()
-            raise Exception ('Failed to enter thermostat input mode.', x, getBlinkText (x))
+            raise Exception(
+                "Failed to enter thermostat input mode.", x, getBlinkText(x)
+            )
         if celsius > currentThermostat:
-            for _ in range (0, celsius - currentThermostat):
+            for _ in range(0, celsius - currentThermostat):
                 self.key_up()
         elif celsius < currentThermostat:
-            for _ in range (0, currentThermostat - celsius):
+            for _ in range(0, currentThermostat - celsius):
                 self.key_down()
-        self.key_enter() # Commit value
+        self.key_enter()  # Commit value
         return self.key(Key.NONE)
 
-    def setFlow (self, flow):
-        """ Set fan flow level to FLOW, i.e. 1-4. """
-        def getBlinkText (string):
-            return string[string.find('{')+1:string.find('}')].strip()
+    def setFlow(self, flow):
+        """Set fan flow level to FLOW, i.e. 1-4."""
+
+        def getBlinkText(string):
+            return string[string.find("{") + 1 : string.find("}")].strip()
 
         if not 1 <= flow <= 4:
-            raise Exception (f'Illegal flow value: {flow}')
+            raise Exception(f"Illegal flow value: {flow}")
 
         currentFlow = parseFlow(self.resetMenu())
-        self.key_enter() # thermostat
-        self.key_enter() # heat/cool mode
-        if f'>{currentFlow}<' != getBlinkText (self.key_enter()):
+        self.key_enter()  # thermostat
+        self.key_enter()  # heat/cool mode
+        if f">{currentFlow}<" != getBlinkText(self.key_enter()):
             x = self.key()
-            raise Exception ('Failed to flow input mode.', x, getBlinkText (x))
+            raise Exception("Failed to flow input mode.", x, getBlinkText(x))
         if flow > currentFlow:
-            for _ in range (0, flow - currentFlow):
+            for _ in range(0, flow - currentFlow):
                 self.key_up()
         elif flow < currentFlow:
-            for _ in range (0, currentFlow - flow):
+            for _ in range(0, currentFlow - flow):
                 self.key_down()
-        self.key_enter() # commit value
+        self.key_enter()  # commit value
         return self.key(Key.NONE)
 
-    def setLanguage (self, language):
-        """ Set CTS600 display language to the first language that matches LANGUAGE. """
-        def getBlinkText (string):
-            return string[string.find('{')+1:string.find('}')].strip()
+    def setLanguage(self, language):
+        """Set CTS600 display language to the first language that matches LANGUAGE."""
 
-        self.resetMenu ()
-        self.key_down (repeat=8)
+        def getBlinkText(string):
+            return string[string.find("{") + 1 : string.find("}")].strip()
+
+        self.resetMenu()
+        self.key_down(repeat=8)
         # Cycle all the way up, then all the way down searching for LANGUAGE.
-        if (cycleToMenuEnd (getBlinkText(self.key_enter ()),
-                            lambda: getBlinkText(self.key_up()),
-                            match=language)
-            or cycleToMenuEnd (getBlinkText(self.display ()),
-                               lambda: getBlinkText(self.key_down()),
-                               match=language)):
-            self.key_enter() # commit
+        if cycleToMenuEnd(
+            getBlinkText(self.key_enter()),
+            lambda: getBlinkText(self.key_up()),
+            match=language,
+        ) or cycleToMenuEnd(
+            getBlinkText(self.display()),
+            lambda: getBlinkText(self.key_down()),
+            match=language,
+        ):
+            self.key_enter()  # commit
             return True
         else:
             self.key_esc()
             return False
-        
-    def setMode (self, mode):
-        """ Set operation mode to MODE, i.e. HEAT, COOL, or AUTO. """
+
+    def setMode(self, mode):
+        """Set operation mode to MODE, i.e. HEAT, COOL, or AUTO."""
         # ordering of all_modes is important; it corresponds to CTS600
         # menu up to down.
-        all_modes = ['AUTO', 'COOL', 'HEAT']
+        all_modes = ["AUTO", "COOL", "HEAT"]
         if not mode in all_modes:
-            raise Exception (f'Illegal operation mode: {mode}')
-        mode_index = all_modes.index (mode)
+            raise Exception(f"Illegal operation mode: {mode}")
+        mode_index = all_modes.index(mode)
         # operate menu based on mode position, so as to operate
         # independent of CTS600 language setting.
         self.resetMenu()
-        self.key_enter() # thermostat
-        self.key_enter() # mode
+        self.key_enter()  # thermostat
+        self.key_enter()  # mode
         # now ensure we're at topmost mode, i.e. 'AUTO'
         self.key_up()
         self.key_up()
         self.key_up()
-        for _ in range (mode_index):
-            self.key_down ()
-        self.key_enter () # commit value
+        for _ in range(mode_index):
+            self.key_down()
+        self.key_enter()  # commit value
         return self.key()
-    
-    def setT15 (self, celsius):
-        """ Set the T15 room sensor temperature. """
-        adtemp = nilanCelsiusToAD (celsius)
-        self.log ('setT15: %s -> %s', celsius, adtemp)
-        self.wi_ro_regs (0x2a, adtemp)
+
+    def setT15(self, celsius):
+        """Set the T15 room sensor temperature."""
+        adtemp = nilanCelsiusToAD(celsius)
+        self.log("setT15: %s -> %s", celsius, adtemp)
+        self.wi_ro_regs(0x2A, adtemp)
         self._t15_adtemp = adtemp
 
-    def getT15 (self):
-        """ Get the previously set T15 room sensor temperature, in celsius. """
-        return nilanADToCelsius (self._t15_adtemp) if self._t15_adtemp else None
+    def getT15(self):
+        """Get the previously set T15 room sensor temperature, in celsius."""
+        return nilanADToCelsius(self._t15_adtemp) if self._t15_adtemp else None
 
-    def enable_service_menu (self):
-        """ Enable the CTS600 service menu by pressing down and enter for 10 seconds. """
+    def enable_service_menu(self):
+        """Enable the CTS600 service menu by pressing down and enter for 10 seconds."""
         import time
-        self.wi_ro_regs (0x100, int (Key.DOWN + Key.ENTER))
-        self.wi_ro_regs (0x100, int (Key.DOWN + Key.ENTER))
-        time.sleep (10)
-        self.wi_ro_regs (0x100, int (Key.NONE))
+
+        self.wi_ro_regs(0x100, int(Key.DOWN + Key.ENTER))
+        self.wi_ro_regs(0x100, int(Key.DOWN + Key.ENTER))
+        time.sleep(10)
+        self.wi_ro_regs(0x100, int(Key.NONE))
         return self.display()
-        
-    
-class CTS600Mockup (CTS600):
-    """ A no-op pseudo-device just for testing and debugging. """
-    mockup_data = {'thermostat': 21,
-                   'mode': 'COOL',
-                   'flow': 2,
-                   'status': 'COOLING',
-                   'T15': 23,
-                   'T2': 6,
-                   'T1': 16,
-                   'T5': 4,
-                   'T6': 39,
-                   'inletFlow': 2,
-                   'exhaustFlow': 2,
-                   'LED': 'on'}
-    mockup_slave_id = {'slaveID': 16,
-                       'runStatus': 1,
-                       'errorStatus': 0,
-                       'resetStatus': 1,
-                       'protocolVersion': 100,
-                       'softwareVersion': 131,
-                       'softwareDate': 0,
-                       'softwareTime': 0,
-                       'product': b'6551720001',
-                       'numofOutputBits': 0,
-                       'numofLEDs': 0,
-                       'numofInputBits': 0,
-                       'numofKeys': 0,
-                       'numofOutputRegisters': 0,
-                       'numofInputRegisters': 0,
-                       'reserved': b'\x00\x00',
-                       'numofActions': 0,
-                       'displayRows': 2,
-                       'displayColumns': 8,
-                       'displayType': 1,
-                       'displayDataType': 1}
+
+
+class CTS600Mockup(CTS600):
+    """A no-op pseudo-device just for testing and debugging."""
+
+    mockup_data = {
+        "thermostat": 21,
+        "mode": "COOL",
+        "flow": 2,
+        "status": "COOLING",
+        "T15": 23,
+        "T2": 6,
+        "T1": 16,
+        "T5": 4,
+        "T6": 39,
+        "inletFlow": 2,
+        "exhaustFlow": 2,
+        "LED": "on",
+    }
+    mockup_slave_id = {
+        "slaveID": 16,
+        "runStatus": 1,
+        "errorStatus": 0,
+        "resetStatus": 1,
+        "protocolVersion": 100,
+        "softwareVersion": 131,
+        "softwareDate": 0,
+        "softwareTime": 0,
+        "product": b"6551720001",
+        "numofOutputBits": 0,
+        "numofLEDs": 0,
+        "numofInputBits": 0,
+        "numofKeys": 0,
+        "numofOutputRegisters": 0,
+        "numofInputRegisters": 0,
+        "reserved": b"\x00\x00",
+        "numofActions": 0,
+        "displayRows": 2,
+        "displayColumns": 8,
+        "displayType": 1,
+        "displayDataType": 1,
+    }
     slave_id = None
-    
-    def doRequest (self, request, requestFrame=[]):
+
+    def doRequest(self, request, requestFrame=[]):
         import time
+
         time.sleep(0.1)
         pass
 
-    def initialize (self):
-        CTS600.initialize (self)
-        for i in range (0, 0x200):
+    def initialize(self):
+        CTS600.initialize(self)
+        for i in range(0, 0x200):
             self.output_bits[i] = 0
         import time
-        time.sleep (1)
+
+        time.sleep(1)
         self.slave_id = self.mockup_slave_id
-    
-    def connect (self):
+
+    def connect(self):
         pass
 
-    def setThermostat (self, celsius):
-        self.data['thermostat'] = celsius
+    def setThermostat(self, celsius):
+        self.data["thermostat"] = celsius
         return ""
 
-    def setMode (self, mode):
+    def setMode(self, mode):
         pass
 
-    def slaveID (self):
-        """ Output from my VPL-15 """
+    def slaveID(self):
+        """Output from my VPL-15"""
         return self.slave_id
 
-    def updateData (self, updateDisplayData):
-        import threading, time
-        def doit ():
-            time.sleep (2 if updateDisplayData else 6)
+    def updateData(self, updateDisplayData):
+        import threading
+        import time
+
+        def doit():
+            time.sleep(2 if updateDisplayData else 6)
             self.data = self.mockup_data
-        threading.Thread (target=doit).start()
+
+        threading.Thread(target=doit).start()
+
 
 def test(port=None):
     port = port or findUSB()
-    print (f"port: {port}")
-    client = ModbusSerialClient(port=port, baudrate=19200, parity='N', stopbits=2, bytesize=8)
+    print(f"port: {port}")
+    client = ModbusSerialClient(
+        port=port, baudrate=19200, parity="N", stopbits=2, bytesize=8
+    )
     cts600 = CTS600(client=client)
     cts600.connect()
     cts600.initialize()
     slaveID = cts600.slaveID()
-    print ('CTS600: ', slaveID)
-    cts600.key ()
+    print("CTS600: ", slaveID)
+    cts600.key()
     return cts600
 
-def t2 (x):
-    a,b,*c = x
-    print (f"a: {a}, b: {b}, c: {c}")
-    return a,b,c
+
+def t2(x):
+    a, b, *c = x
+    print(f"a: {a}, b: {b}, c: {c}")
+    return a, b, c

@@ -1,0 +1,132 @@
+esphome:
+  name: nilan-cts600
+  friendly_name: Nilan CTS600
+
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-
+          id(mb_bridge_enabled).publish_state(id(mb_bridge).is_enabled());
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+ota:
+  platform: esphome
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA3
+  domain: .lan
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Nilan-CTS-600 Fallback Hotspot"
+    password: !secret ap_password
+
+captive_portal:
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/rosenrot00/esphome_modbus_bridge
+    components: [modbus_bridge]
+
+uart:
+  id: uart_bus
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 19200
+  stop_bits: 2
+  rx_buffer_size: 256 # minimum 256 recommended; increase for long RTU responses
+
+  # Modbus bridge configuration
+modbus_bridge:
+  - id: mb_bridge
+    uart_id: uart_bus
+    tcp_port: 502 # TCP port to listen on
+    tcp_poll_interval: 50 # ms between TCP polls
+    tcp_client_timeout: 300000 # ms of inactivity before client is disconnected
+    tcp_allowed_clients: 1 # number of simultaneous TCP clients (min 1)
+    crc_bytes_swapped: true
+    
+    # Example – fires whenever the number of connected TCP clients changes
+    on_tcp_clients_changed:
+      then:
+        - lambda: |-
+            id(tcp_clients) = count;
+        - logger.log:
+            format: "TCP clients connected: %d"
+            args: ["count"]
+
+# Output and LED for visual feedback
+output:
+  - platform: gpio
+    id: output_led_status
+    pin: GPIO2
+
+light:
+  - platform: binary
+    id: led_status
+    name: "Status LED"
+    output: output_led_status
+
+# Global variable to hold number of connected TCP clients
+globals:
+  - id: tcp_clients
+    type: int
+    restore_value: no
+    initial_value: "0"
+
+# Every 3 s: blink LED as many times as connected TCP clients (100 ms per blink)
+interval:
+  - interval: 3s
+    then:
+      - if:
+          condition:
+            lambda: "return id(tcp_clients) > 0;"
+          then:
+            - repeat:
+                count: !lambda "return id(tcp_clients);"
+                then:
+                  - light.turn_on: led_status
+                  - delay: 100ms
+                  - light.turn_off: led_status
+                  - delay: 100ms # short pause between blinks
+
+# Debug switch for enabling verbose Modbus logging
+switch:
+  - platform: template
+    name: "Modbus Bridge Debug"
+    id: modbus_debug_switch
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lambda: |-
+          id(mb_bridge).set_debug(true);
+          id(modbus_debug_switch).publish_state(true);
+    turn_off_action:
+      - lambda: |-
+          id(mb_bridge).set_debug(false);
+          id(modbus_debug_switch).publish_state(false);
+                    id(modbus_debug_switch).publish_state(false);
+  - platform: template
+    id: mb_bridge_enabled
+    name: "Modbus Bridge Enabled"
+    restore_mode: "ALWAYS_ON"
+    optimistic: true
+    turn_on_action:
+      - lambda: |-
+          id(mb_bridge).set_enabled(true);
+    turn_off_action:
+      - lambda: |-
+          id(mb_bridge).set_enabled(false);
