@@ -12,8 +12,8 @@
 		"data_description": {
 		    "name": "Identify the ventilation unit controlled by Nilan CTS600.",
 		    "port": "The serial RS485 adapter wired to Nilan CTS600.",
-		    "sensor_T15": "An entity that provides the room temperature.",
-		    "retries": "Number of times to retry RS485 communications before giving up."
+		    "sensor_T15": "An entity that provides the room temperature. This emulates the temperature sensor in the control panel.",
+		    "retries": "Number of times to retry RS485 communications with CTS600 before giving up."
 		}
 	    }
 	}

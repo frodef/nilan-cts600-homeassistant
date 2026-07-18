@@ -270,6 +270,9 @@ class CTS600:
         
     def connect (self):
         self.client.connect()
+
+    def shutdown (self):
+        self.client.close()
         
     def slaveID (self):
         return decodeSlaveID (self.slave_id_data, self._slave_id_struct)
@@ -617,7 +620,7 @@ class CTS600:
         self.key_enter() # heat/cool mode
         if f'>{currentFlow}<' != getBlinkText (self.key_enter()):
             x = self.key()
-            raise Exception ('Failed to flow input mode.', x, getBlinkText (x))
+            raise Exception (f'Failed to set flow input mode ({currentFlow}).', x, getBlinkText (x))
         if flow > currentFlow:
             for _ in range (0, flow - currentFlow):
                 self.key_up()

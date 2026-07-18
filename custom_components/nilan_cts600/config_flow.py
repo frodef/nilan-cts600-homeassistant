@@ -55,14 +55,14 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input=None):
         # Specify items in the order they are to be displayed in the UI
-        import serial.tools.list_ports
+        import serial
 
         errors = {}
         detected_ports = list_serial_devices()
         suggestions = user_input or {
             "name": "Nilan Central Ventilation",
             "port": detected_ports[0]['dev'] if detected_ports else "",
-            "retries": 3,
+            # "retries": 3,
         }
 
         config_schema = {
@@ -88,14 +88,14 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             }),
         }
-        if self.show_advanced_options:
-            config_schema[vol.Optional ("retries", default=2)] = selector ({
-                "number": {
-                    "min": 1,
-                    "max": 5,
-                    "mode": "box"
-                }
-            })
+        # if self.show_advanced_options: XXX
+        #     config_schema[vol.Optional ("retries", default=2)] = selector ({
+        #         "number": {
+        #             "min": 1,
+        #             "max": 5,
+        #             "mode": "box"
+        #         }
+        #     })
             
         if user_input and user_input["port"]:
             try:
@@ -112,3 +112,37 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
                                         data_schema=self.add_suggested_values_to_schema(vol.Schema(config_schema), suggestions),
                                         errors=errors,
                                         last_step=True)
+
+    async def async_step_reconfigure(
+            self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration of the integration."""
+        import serial
+        errors: dict[str, str] = {}
+        detected_ports = await self.hass.async_add_executor_job(list_serial_devices)
+
+        if not detected_ports:
+            errors['base'] = "No serial port detected."
+        
+        # Retrieve the existing config entry being reconfigured
+        reconfigure_entry = self._get_reconfigure_entry()
+
+        if user_input and not errors:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(),
+                data_updates=user_input,
+            )
+        else:
+            return self.async_show_form(
+                step_id="reconfigure",
+                data_schema=vol.Schema({
+                    vol.Optional ("sensor_T15", default=reconfigure_entry.data.get("sensor_T15")): selector ({
+                        "entity": {
+                            "filter": {
+                                "domain": ["sensor", "input_number"]
+                            }
+                        }
+                    }),
+                }),
+                errors=errors,
+            )

@@ -95,7 +95,7 @@ class CTS600Sensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        _LOGGER.debug("Entity update: %s", self.coordinator.data)
+        _LOGGER.debug("Entity update %s: %s", self.entity_description.key, self.coordinator.cts600.data.get(self.entity_description.key))
         value = self.coordinator.cts600.data.get(self.entity_description.key)
         if value != self._attr_native_value:
             self._attr_native_value = value

@@ -25,11 +25,6 @@ from .nilan_cts600 import CTS600, Key, NilanCTS600ProtocolError, nilanString, fi
 
 _LOGGER = logging.getLogger(__name__)
 
-if os.uname()[1] == 'x390':
-    # development mockup device
-    _LOGGER.warning ('%s Mockup device mode.', __name__)
-    from .nilan_cts600 import CTS600Mockup as CTS600
-
 _initLock = asyncio.Lock()
 
 async def getCoordinator (hass, config):
@@ -73,6 +68,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error ("Device connect failed for %s: %s", port, e)
             raise PlatformNotReady
+        _LOGGER.debug ("Device connected to %s", port)
         
         super().__init__(
             hass,
@@ -86,22 +82,40 @@ class CTS600Coordinator(DataUpdateCoordinator):
         if not hass:
             raise Exception ("No HASS object!")
         
-        self.retries = int(config.get ('retries', 2))
-        sensor_entity_id = config.get ('sensor_T15')
+        # self.retries = int(config.get ('retries', 2)) XXX
+        self.retries = 3
+        self.sensor_entity_id = config.get ('sensor_T15')
             
+        self.port = port
         self.cts600 = cts600
         self._lock = asyncio.Lock()
         self._t15_fallback = None
         self._updateDataCounter = 100
-        self._manual_activity_ts = 0
+        self._manual_activity_ts = 0 
+        self.t15_unsub = None
         
-        if sensor_entity_id:
-            # sensor_state = hass.states.get(sensor_entity_id)
-            # if sensor_state:
-            #     self.hass.loop.create_task (self._update_T15_state (sensor_entity_id, None, sensor_state))
-            async_track_state_change_event(hass, sensor_entity_id, self._update_T15_state)
+        if self.sensor_entity_id:
+            self.t15_unsub = async_track_state_change_event(hass, self.sensor_entity_id, self._receive_T15_state)
+            asyncio.run_coroutine_threadsafe(
+                self._update_T15_state(), # Get initial state of T15 sensor.
+                hass.loop
+            )
         else:
             self._t15_fallback = 21
+
+    async def async_shutdown(self) -> None:
+        """Clean up external resources."""
+        async with self._lock:
+            _LOGGER.debug ("Coordinator shutdown %s %s.", self.port, self)
+            if self.hass.data[DATA_KEY].get(self.port) == self:
+                del self.hass.data[DATA_KEY][self.port]
+            if self.t15_unsub:
+                self.t15_unsub()
+                self.t15_unsub = None
+            if self.cts600:
+                self.cts600.shutdown()
+        # Always call parent method last
+        await super().async_shutdown()
 
     def register_manual_activity (self):
         self._manual_activity_ts = time.time_ns()//1000_000_000
@@ -135,20 +149,25 @@ class CTS600Coordinator(DataUpdateCoordinator):
                     self._updateDataCounter = 0
                 return await self.updateData(updateShowData=updateShowData)
 
-    async def _update_T15_state (self, event: Event[EventStateChangedData]) -> None:
-        """ Update thermostat with latest (room) temperature from sensor."""
+    async def _receive_T15_state (self, event: Event[EventStateChangedData]) -> None:
         new_state = event.data["new_state"]
-
+        _LOGGER.debug ("Received new T15 state: %s [%s]", new_state.state, new_state)
         if new_state.state is None or new_state.state in ["unknown", "unavailable"]:
             return
-        if not self.hass:
-            return
-
-        sensor_unit = new_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UnitOfTemperature.CELSIUS
-        value = TemperatureConverter.convert(
-            float(new_state.state), sensor_unit, UnitOfTemperature.CELSIUS
-        )
-        await self.setT15 (value)
+        await self._update_T15_state (new_state)
+        
+    async def _update_T15_state (self, new_state = None) -> None:
+        """ Update thermostat with latest (room) temperature from sensor."""
+        if not new_state:
+            new_state = self.hass.states.get (self.sensor_entity_id)
+        if not new_state:
+            _LOGGER.debug ("Unable to read T15 sensor %s", self.sensor_entity_id)
+        else:
+            sensor_unit = new_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) or UnitOfTemperature.CELSIUS
+            value = TemperatureConverter.convert(
+                float(new_state.state), sensor_unit, UnitOfTemperature.CELSIUS
+            )
+            await self.setT15 (value)
         
     async def _call (self, method, *args):
         """Make a synchronous call to CTS600 by creating a job and
@@ -163,6 +182,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
                 except (TimeoutError, NilanCTS600ProtocolError) as e:
                     _LOGGER.debug ("Exception %s: %s %s", e.__class__.__name__, method.__func__.__name__, args)
                     if not attempt<self.retries:
+                        _LOGGER.warning ("After %s retries, exception %s: %s %s", self.retries, e.__class__.__name__, method.__func__.__name__, args)
                         raise e
             _LOGGER.debug ("Call result: %s %s => %s", method.__func__.__name__, args, result)
             return result
