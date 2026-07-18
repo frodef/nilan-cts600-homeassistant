@@ -22,8 +22,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         # entry.runtime_data.coordinator.shutdown()
         _LOGGER.debug('UNLOAD: %s', entry)
         coordinator = await getCoordinator(hass, entry.data)
-        _LOGGER.debug('UNLOAD coord: %s', coordinator)
         await coordinator.async_shutdown()
-        _LOGGER.debug('UNLOAD coord done: %s', coordinator)
     return unload_ok
 
