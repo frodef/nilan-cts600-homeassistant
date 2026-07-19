@@ -179,7 +179,7 @@ might still find useful.
 
 The CTS600 provides 12 volts power to the control panel. However, the
 control panel will operate just fine on 5 volts, and so it can be
-hooked up directly to your USB RS486 adapter which typically provides
+hooked up directly to your USB RS485 adapter which typically provides
 5 volts. (This would be e.g. for probing the control panel to figure
 out its operation.)
 
